@@ -15,7 +15,7 @@ import os, sys,time
 
 class Converter_FSDM_CGNS:
 
-  def __init__(self,mesh_name,dimPb=2,invertPlanesYZ=False,conformal=True,IBM=False,IBM_parameters={},keepFlowSolution=False):
+  def __init__(self,mesh_name,dimPb=2,invertPlanesYZ=False,conformal=True,IBM=False,IBM_parameters={},keepFlowSolution=False,inmemory=False):
 
     self.mesh_name = mesh_name
     self.clac = FSClac()
@@ -45,6 +45,7 @@ class Converter_FSDM_CGNS:
     self.IBM_parameters = IBM_parameters
     self.invertPlanesYZ = invertPlanesYZ
     self.keepFlowSolution = keepFlowSolution
+    self.inmemory = inmemory
 
   def CellTypesFS2Cassiopee(self,idx):
     #Manuel entry of the keys
@@ -813,7 +814,8 @@ class Converter_FSDM_CGNS:
     self.initializeCGNSCoordinates()
     self.recoverFSDMConnectivity()
     self.buildCGNSConnectivity()
-    self.exportCGNSmesh()
+    if self.inmemory: return self.pytree
+    else: self.exportCGNSmesh()
 
   def initializePseudoCell_QuadNQuad(self,z_NCfaces):
     ##### CREATE QUAD2QUAD CONNECTIVITY for OCTREE meshes #########
