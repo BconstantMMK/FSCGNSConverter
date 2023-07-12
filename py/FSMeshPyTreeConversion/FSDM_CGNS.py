@@ -15,9 +15,19 @@ import os, sys,time
 
 class Converter_FSDM_CGNS:
 
-  def __init__(self,mesh_name,dimPb=2,invertPlanesYZ=False,conformal=True,IBM=False,IBM_parameters={},keepFlowSolution=False,inmemory=False):
+  def __init__(self,mesh_name,dimPb=2,invertPlanesYZ=False,conformal=True,IBM=False,IBM_parameters={},keepFlowSolution=False,dict_BCs=[],inmemory=False):
 
+    #Parameters passed as arguments
     self.mesh_name = mesh_name
+    self.conformal = conformal
+    self.dimPb = dimPb
+    self.IBM = IBM
+    self.IBM_parameters = IBM_parameters
+    self.invertPlanesYZ = invertPlanesYZ
+    self.keepFlowSolution = keepFlowSolution
+    self.inmemory = inmemory
+    #Variables defined inside the class
+
     self.clac = FSClac()
     self.fsmesh = FSMesh(self.clac)
     self.pytree = Internal.newCGNSTree()
@@ -36,16 +46,12 @@ class Converter_FSDM_CGNS:
     self.numpy_cell2node_volume = []
     self.numpy_cell2node_surface = []
     self.numpy_range = []
+    self.indices_per_boundary = []
     self.list_names_BCs = []
+    self.fs_markers = []
     self.boundary_marker_to_bc_name = {}
     self.boundary_marker_to_point_list = {}
-    self.conformal = conformal
-    self.dimPb = dimPb
-    self.IBM = IBM
-    self.IBM_parameters = IBM_parameters
-    self.invertPlanesYZ = invertPlanesYZ
-    self.keepFlowSolution = keepFlowSolution
-    self.inmemory = inmemory
+    self.dict_bcs = dict_BCs
 
   def CellTypesFS2Cassiopee(self,idx):
     #Manuel entry of the keys
@@ -761,7 +767,7 @@ class Converter_FSDM_CGNS:
 
     return
 
-  def recoverFSDMConnectivity(self):
+  def recoverFSDMConnectivity_old(self):
     for cell_type in self.fs_volume_cell_types:
       fs_cell2Node = self.fsmesh.GetCell2Node(cell_type)
       self.numpy_cell2node_volume.append(numpy.ravel(numpy.array(fs_cell2Node.Buffer(), copy=False)) + 1)
@@ -780,9 +786,38 @@ class Converter_FSDM_CGNS:
         if len(numpy.ravel(numpy.argwhere(np_boundary_markers_celltype==marker)))>0:
           self.list_names_BCs.append(str(self.fsmesh.GetCellAttributeValueName("CADGroupID", marker)))
           indices_vector = numpy.ravel(numpy.argwhere(np_boundary_markers_celltype==marker))
+          self.indices_per_boundary.append(indices_vector)
           self.numpy_cell2node_surface.append(numpy.ravel(numpy_cell2node_not_raveled[indices_vector]))
           self.fs_cell_types_BCs.append(cell_type)
 
+    return
+
+  def recoverFSDMConnectivity(self):
+    for cell_type in self.fs_volume_cell_types:
+      n_cell_owned = self.fsmesh.GetNOwnedCells(cell_type)
+      fs_cell2Node = self.fsmesh.GetCell2Node(cell_type)
+      self.numpy_cell2node_volume.append(numpy.ravel(numpy.array(fs_cell2Node.Buffer(), copy=True)[:n_cell_owned]) + 1)
+
+    #Get marker list
+    fs_boundary_marker_list = self.fsmesh.GetCellAttributeValuesWithNames("CADGroupID")
+
+    for marker in fs_boundary_marker_list:
+      indices_vector = []
+      for cell_type in self.fs_surface_cell_types:
+        n_cell_owned = self.fsmesh.GetNOwnedCells(cell_type)
+        n_cell = self.fsmesh.GetNCells(cell_type)
+        fs_cell2Node = self.fsmesh.GetCell2Node(cell_type)
+        numpy_cell2node_not_raveled = (numpy.array(fs_cell2Node.Buffer(), copy=True) + 1)[:n_cell_owned]
+        fs_boundary_markers_celltype = self.fsmesh.GetCellAttribute("CADGroupID",cell_type)
+        np_boundary_markers_celltype = numpy.array(fs_boundary_markers_celltype.Buffer(), copy=True)[:n_cell_owned]
+
+        if len(numpy.ravel(numpy.argwhere(np_boundary_markers_celltype==marker)))>0:
+          self.list_names_BCs.append(str(self.fsmesh.GetCellAttributeValueName("CADGroupID", marker)))
+          indices_vector = numpy.ravel(numpy.argwhere(np_boundary_markers_celltype==marker))
+          self.indices_per_boundary.append(indices_vector)
+          self.numpy_cell2node_surface.append(numpy.ravel(numpy_cell2node_not_raveled[indices_vector]))
+          self.fs_cell_types_BCs.append(cell_type)
+          self.fs_markers.append(marker)
     return
 
   def buildCGNSConnectivity(self):
@@ -803,7 +838,9 @@ class Converter_FSDM_CGNS:
       nb_cell_current_boundary = len(self.numpy_cell2node_surface[idx])//nb_vertex_per_cell
 
       ELT = Internal.newElements(name = self.list_names_BCs[idx].split(".")[0]+"."+self.CellTypesFS2Cassiopee(fs_cell_type), etype = self.CellTypesFS2Cassiopee(fs_cell_type),erange =[counter_cells, counter_cells+nb_cell_current_boundary-1], econnectivity = self.numpy_cell2node_surface[idx],  eboundary = nb_cell_current_boundary, parent = pytree_zone)
-      C._addBC2Zone(pytree_zone, self.list_names_BCs[idx].split(".")[0]+"."+self.CellTypesFS2Cassiopee(fs_cell_type),self.list_names_BCs[idx], elementRange=[counter_cells,counter_cells+nb_cell_current_boundary-1])
+      bctype = self.dict_bcs[self.fs_markers[idx]]
+      C._addBC2Zone(pytree_zone, self.list_names_BCs[idx].split(".")[0]+"."+self.CellTypesFS2Cassiopee(fs_cell_type),bctype, elementRange=[counter_cells,counter_cells+nb_cell_current_boundary-1])
+
 
       counter_cells += nb_cell_current_boundary
 
