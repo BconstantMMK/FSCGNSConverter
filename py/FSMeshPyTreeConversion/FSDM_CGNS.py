@@ -648,24 +648,47 @@ class Converter_FSDM_CGNS:
   def recoverInfoMeshFSDM(self):
     #Import mesh
     if self.mesh_name.split('.')[-1] == 'h5' :
-      self.fsmesh.ImportMeshHDF5(MeshFilename = self.mesh_name) or FSError.PrintAndExit()
+      command = "ImportMeshHDF5"
     elif self.mesh_name.split('.')[-1] == 'grid' or self.mesh_name.split('.')[-1] == 'cdf':
-      self.fsmesh.ImportMeshTAU(MeshFilename = self.mesh_name) or FSError.PrintAndExit()
+      command = "ImportMeshTAU"
 
-    self.nb_vertices = self.fsmesh.GetNCells(FSMeshEnums.CT_Node)
+    meshOps = ((command, {"MeshFilename" : self.mesh_name}),
+           "PrintInfo",
+           # --- create a reasonable partitioning for ZOLTAN (avoids memory bottlenecks) ---
+           "RepartitionMeshRCB",
+           # ----create local numbering,
+           "CreateLocalNumbering",
+           # --- main task ---
+           ("RepartitionMeshPARMETIS", { "PreserveCellStacks" : True,
+                                       "LineSectionsExtractionParameters" :
+                                       { "ActiveNodesSelection" : { "CellTypes" : ("Prisms", "Hexahedra","Tetrahedra","Pyramids","Quadrilaterals","Triangles") },
+                                         "StartNodesSelection"  : { "CellAttribute" : "CADGroupID",
+                                                                    },
+                                       },
+                                       "GraphExtraction"  : {"GraphType": "CellBased"},
+                                        "Approach" : "CoordinateGraphMultilevel",
+                                     }),
+           "PrintInfo",
+           )
+
+    if not self.fsmesh.DoOps(meshOps):
+      FSError.PrintAndExit()
+
+
+    self.nb_vertices = self.fsmesh.GetNOwnedCells(FSMeshEnums.CT_Node)
 
     #Get information regarding surface cells
     for cell_type in FSUnstructSurfaceCellTypes:
       if self.fsmesh.HasCellType(cell_type) :
         self.fs_surface_cell_types.append(cell_type)
-        self.nb_cells_surface += self.fsmesh.GetNCells(cell_type)
+        self.nb_cells_surface += self.fsmesh.GetNOwnedCells(cell_type)
 
 
     #Get information regarding volume cells
     for cell_type in FSUnstructVolumeCellTypes:
       if self.fsmesh.HasCellType(cell_type) :
         self.fs_volume_cell_types.append(cell_type)
-        self.nb_cells_volume += self.fsmesh.GetNCells(cell_type)
+        self.nb_cells_volume += self.fsmesh.GetNOwnedCells(cell_type)
     return
 
   def recoverCoordinatesFSDM(self):
@@ -786,10 +809,40 @@ class Converter_FSDM_CGNS:
 
     return
 
-  def recoverFlowSolutionAugState(self):
+  def recoverFlisWallDistance(self):
+
+    augState_data = self.fsmesh.GetUnstructDataset("FlisWallDistance").GetValues()
+    augState_data_numpy = numpy.array(augState_data.Buffer(),copy=True)
+    indices_GC = numpy.empty(0,dtype=numpy.int32)
+    totalNCells = 0
+    for idx,cell_type in enumerate(self.fs_volume_cell_types):
+       NOwnedCells = self.fsmesh.GetNOwnedCells(cell_type)
+       NGhostCells = self.fsmesh.GetNGhostCells(cell_type)
+       NCells = self.fsmesh.GetNCells(cell_type)
+       indices_GC = numpy.concatenate([indices_GC,numpy.arange(totalNCells+NOwnedCells,totalNCells+NCells)])
+       totalNCells += NCells
+    augState_data_numpy = numpy.array(augState_data.Buffer(),copy=True)
+    augState_data_numpy = numpy.delete(augState_data_numpy, indices_GC,axis=0)
+
+    zone = Internal.getZones(self.pytree)[0]
+    FS = Internal.getNodeFromType(zone,'FlowSolution_t')
+    Internal.newDataArray("TurbulentDistance", value = augState_data_numpy[:,0], parent = FS)
+
+    return
+
+  def recoverFlowSolutionAugStateVolume(self):
     augState_data = self.fsmesh.GetUnstructDataset("AugState").GetValues()
     augState_names = self.fsmesh.GetUnstructDataset("AugState").GetNames()
-    augState_data_numpy = numpy.array(augState_data.Buffer(),copy=False)
+    indices_GC = numpy.empty(0,dtype=numpy.int32)
+    totalNCells = 0
+    for idx,cell_type in enumerate(self.fs_volume_cell_types):
+       NOwnedCells = self.fsmesh.GetNOwnedCells(cell_type)
+       NGhostCells = self.fsmesh.GetNGhostCells(cell_type)
+       NCells = self.fsmesh.GetNCells(cell_type)
+       indices_GC = numpy.concatenate([indices_GC,numpy.arange(totalNCells+NOwnedCells,totalNCells+NCells)])
+       totalNCells += NCells
+    augState_data_numpy = numpy.array(augState_data.Buffer(),copy=True)
+    augState_data_numpy = numpy.delete(augState_data_numpy, indices_GC,axis=0)
     augState_names_string = []
     for name in augState_names:
       augState_names_string.append(str(name))
@@ -799,6 +852,38 @@ class Converter_FSDM_CGNS:
     for i,augState_name in enumerate(augState_names_string):
       Internal.newDataArray(augState_name, value = augState_data_numpy[:,i], parent = FS)
 
+    return
+
+  def recoverFlowSolutionAugStateSurface(self): #problem cassiopee
+    for datasetName in self.fsmesh.GetUnstructDatasetNames():
+      if datasetName.StartsWith("Boundary"):
+        boundary_values_data = self.fsmesh.GetUnstructDataset(datasetName).GetValues()
+        boundary_values_names = self.fsmesh.GetUnstructDataset(datasetName).GetNames()
+
+    indices_GC = numpy.empty(0,dtype=numpy.int32)
+    totalNCells = 0
+    for idx,cell_type in enumerate(self.fs_surface_cell_types):
+       NOwnedCells = self.fsmesh.GetNOwnedCells(cell_type)
+       NGhostCells = self.fsmesh.GetNGhostCells(cell_type)
+       NCells = self.fsmesh.GetNCells(cell_type)
+       indices_GC = numpy.concatenate([indices_GC,numpy.arange(totalNCells+NOwnedCells,totalNCells+NCells)])
+       totalNCells += NCells
+
+    boundary_values_numpy = numpy.array(boundary_values_data.Buffer(), copy=True)
+    boundary_values_numpy = numpy.delete(boundary_values_numpy, indices_GC,axis=0)
+
+
+    boundary_values_names_string = []
+    for name in boundary_values_names:
+      boundary_values_names_string.append(str(name))
+    zone_bc = Internal.getNodeFromType(self.pytree,"ZoneBC_t")
+    if zone_bc != None:
+      nodes_bcs = Internal.getNodesFromType(zone_bc,"BC_t")
+      for i,node_bc in enumerate(nodes_bcs):
+          boundarystatedataset=Internal.createNode('BCDataSet','BCDataSet_t',parent=node_bc,value='Null')
+          boundarystate = Internal.createNode("Boundary",'BCData_t',parent=boundarystatedataset)
+          for j,boundary_values_name in enumerate(boundary_values_names_string):
+              boundarystate[2].append([boundary_values_name,boundary_values_numpy[:,j][self.indices_per_boundary[i]], [], 'DataArray_t'])
     return
 
   def exportCGNSmesh(self):
@@ -814,6 +899,11 @@ class Converter_FSDM_CGNS:
     self.initializeCGNSCoordinates()
     self.recoverFSDMConnectivity()
     self.buildCGNSConnectivity()
+    if self.keepFlowSolution:
+      self.recoverFlowSolutionAugStateVolume()
+      self.recoverFlowSolutionAugStateSurface()
+      self.recoverFlisWallDistance()
+
     if self.inmemory: return self.pytree
     else: self.exportCGNSmesh()
 
