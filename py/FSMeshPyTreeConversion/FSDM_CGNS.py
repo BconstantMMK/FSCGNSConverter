@@ -1,5 +1,7 @@
 import Converter.PyTree as C
+import Converter.Mpi as Cmpi
 import Transform.PyTree as T
+import Intersector.PyTree as XOR
 import Generator.PyTree as G
 import Post.PyTree as P
 import Converter.Internal as Internal
@@ -1030,6 +1032,63 @@ class Converter_FSDM_CGNS:
     if bndType == 'Abutting1to1':
       info[2].append(["UserDefined", zdnrName, [], 'UserDefinedData_t'])
     return None
+
+  def convertMonozoneME2Ngon4FFD(self,reorient=True,mergeOnProc0=False):
+
+    if Internal.getZones(self.pytree) == []:
+      if Cmpi.size==1:
+        print(self.mesh_name.split(".")[0]+".cgns")
+        self.pytree = C.convertFile2PyTree(self.mesh_name.split(".")[0]+".cgns")
+      else:
+        raise ValueError("The pytree is empty and you are using MPI. You should call the function convertFSDM2CGNS with the inmemory=True flag first.")
+
+    # breaking in one zone per type of volume element
+    t3 = C.breakConnectivity(self.pytree)
+    C._deleteEmptyZones(t3)
+
+    # convert multielement in Ngon
+    t4 = C.convertArray2NGon(t3,recoverBC=False)
+    C._deleteFlowSolutions__(t3)
+
+    # save the BCs in the correct format for the recoverBC at the end of the function
+    (BCs,BCNames,BCTypes) = C.getBCs(t3)
+    true_len_BCs = len(BCs)//len(Internal.getZones(t3))
+    BCs = BCs[:true_len_BCs]
+    BCNames = BCNames[:true_len_BCs]
+    BCTypes = BCTypes[:true_len_BCs]
+    for BC in BCs:
+      Elts = Internal.getNodesFromType(BC,"Elements_t")
+      if len(Elts)>1 and Elts[0][0].startswith("GridElements"):
+        Internal._rmNodesByName(BC,Elts[0][0])
+
+    # Multizone NGON getting rid of useless nodes
+    zones = Internal.getZones(t4)
+    for z in zones:
+      Elts = Internal.getNodesFromType(z,"Elements_t")
+      for Elt in Elts:
+        if Elt[0]!="NGonElements" and Elt[0]!="NFaceElements":
+          Internal._rmNodesByName(z,Elt[0])
+    #merging in one single zone
+    t5 = T.merge(t4)
+    #changing the names of the zone
+    z = Internal.getZones(t5)[0]
+    z[0] = z[0]+"."+str(Cmpi.rank)
+
+    #recover BCs
+    C._recoverBCs(t5,(BCs,BCNames,BCTypes))
+    if reorient:
+      XOR._reorient(t5)
+    if mergeOnProc0:
+      t = Cmpi.gatherZones(t5,root=0)
+      t = C.newPyTree(['Base',t])
+      (BCs,BCNames,BCTypes) = C.getBCs(t)
+      z_merged = T.merge(t)
+      C._recoverBCs(z_merged,(BCs,BCNames,BCTypes))
+      t = C.newPyTree(['Base', z_merged])
+    else:
+      t = C.newPyTree(['Base', t5])
+    return t
+
 
 def create_Quad2Quad(coordinates, nonconformal_faces, nonconformal_faces_ctr,plane="xy",tol=1e-6):
 
