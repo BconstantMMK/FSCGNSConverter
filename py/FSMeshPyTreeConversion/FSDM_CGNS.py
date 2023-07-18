@@ -841,8 +841,13 @@ class Converter_FSDM_CGNS:
 
       ELT = Internal.newElements(name = self.list_names_BCs[idx].split(".")[0]+"."+self.CellTypesFS2Cassiopee(fs_cell_type), etype = self.CellTypesFS2Cassiopee(fs_cell_type),erange =[counter_cells, counter_cells+nb_cell_current_boundary-1], econnectivity = self.numpy_cell2node_surface[idx],  eboundary = nb_cell_current_boundary, parent = pytree_zone)
       bctype = self.dict_bcs[self.fs_markers[idx]]
-      C._addBC2Zone(pytree_zone, self.list_names_BCs[idx].split(".")[0]+"."+self.CellTypesFS2Cassiopee(fs_cell_type),bctype, elementRange=[counter_cells,counter_cells+nb_cell_current_boundary-1])
-
+      bcname = self.list_names_BCs[idx].split(".")[0]+"."+self.CellTypesFS2Cassiopee(fs_cell_type)
+      C._addBC2Zone(pytree_zone,bcname,bctype, elementRange=[counter_cells,counter_cells+nb_cell_current_boundary-1])
+      zone_bc =  Internal.getNodeFromType(pytree_zone,"ZoneBC_t")
+      node_bc = Internal.getNodeFromName(zone_bc,bcname)
+      boundarystatedataset=Internal.createNode('BCDataSet','BCDataSet_t',parent=node_bc,value='Null')
+      boundarystate = Internal.createNode("Boundary",'BCData_t',parent=boundarystatedataset)
+      boundarystate[2].append(["BoundaryMarker",self.fs_markers[idx]*numpy.ones(nb_cell_current_boundary), [], 'DataArray_t'])
 
       counter_cells += nb_cell_current_boundary
 
@@ -919,8 +924,8 @@ class Converter_FSDM_CGNS:
     if zone_bc != None:
       nodes_bcs = Internal.getNodesFromType(zone_bc,"BC_t")
       for i,node_bc in enumerate(nodes_bcs):
-          boundarystatedataset=Internal.createNode('BCDataSet','BCDataSet_t',parent=node_bc,value='Null')
-          boundarystate = Internal.createNode("Boundary",'BCData_t',parent=boundarystatedataset)
+          boundarystatedataset=Internal.getNodeFromType(node_bc,'BCDataSet_t')
+          boundarystate = Internal.getNodeFromType(boundarystatedataset,'BCData_t')
           for j,boundary_values_name in enumerate(boundary_values_names_string):
               boundarystate[2].append([boundary_values_name,boundary_values_numpy[:,j][self.indices_per_boundary[i]], [], 'DataArray_t'])
     return
