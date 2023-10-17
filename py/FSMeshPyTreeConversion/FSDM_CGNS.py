@@ -845,12 +845,13 @@ class Converter_FSDM_CGNS:
         if len(numpy.ravel(numpy.argwhere(np_boundary_markers_celltype==marker)))>0:
           self.list_names_BCs.append(str(self.fsmesh.GetCellAttributeValueName("CADGroupID", int(marker))))
           indices_vector = numpy.ravel(numpy.argwhere(np_boundary_markers_celltype==marker))
-          offset = self.fsmesh.GetCellOffset(cell_type) - self.nb_vertices
+          offset_fsdm = self.fsmesh.GetCellOffset(cell_type) - self.nb_vertices
+          print(offset_fsdm,offset)
           self.indices_per_boundary.append(indices_vector+offset)
           self.numpy_cell2node_surface.append(numpy.ravel(numpy_cell2node_not_raveled[indices_vector]))
           self.fs_cell_types_BCs.append(cell_type)
           self.fs_markers.append(marker)
-
+        offset = n_cell_owned
     return
 
   def buildCGNSConnectivity(self):
