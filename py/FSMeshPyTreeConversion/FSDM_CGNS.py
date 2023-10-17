@@ -802,24 +802,55 @@ class Converter_FSDM_CGNS:
 
     #Get marker list
     fs_boundary_marker_list = self.fsmesh.GetCellAttributeValuesWithNames("CADGroupID")
+    np_boundary_marker_list = numpy.array(fs_boundary_marker_list.Buffer(),copy=True)
+    unique_markers = {}
+    for i,cell_type in enumerate(self.fs_surface_cell_types):
+      n_cell_owned = self.fsmesh.GetNOwnedCells(cell_type)
+      fs_boundary_markers_celltype = self.fsmesh.GetCellAttribute("CADGroupID",cell_type)
+      np_boundary_markers_celltype = numpy.array(fs_boundary_markers_celltype.Buffer(), copy=True)[:n_cell_owned]
+      unique_markers[cell_type] =  numpy.unique(np_boundary_markers_celltype)
+      if i>0:
+          shared_markers = list(set(unique_markers[cell_type]) & set(unique_markers[self.fs_surface_cell_types[i-1]])  )
 
-    for marker in fs_boundary_marker_list:
+    if shared_markers !=[]:
+      val = 0
+      np_boundary_markers_celltype_dict = {}
+      for i,cell_type in enumerate(self.fs_surface_cell_types):
+        n_cell_owned = self.fsmesh.GetNOwnedCells(cell_type)
+        fs_boundary_markers_celltype = self.fsmesh.GetCellAttribute("CADGroupID",cell_type)
+        np_boundary_markers_celltype = numpy.array(fs_boundary_markers_celltype.Buffer(), copy=True)[:n_cell_owned]
+        for shared_marker in shared_markers:
+          np_boundary_markers_celltype_dict[cell_type] = numpy.where(np_boundary_markers_celltype==shared_marker, shared_marker+val,np_boundary_markers_celltype)
+        if (shared_marker+val) not in np_boundary_marker_list: np_boundary_marker_list = numpy.append(np_boundary_marker_list,shared_marker+val)
+        self.dict_bcs[shared_marker+val] = self.dict_bcs[shared_marker]
+        val+=0.1
+    else:
+      for i,cell_type in enumerate(self.fs_surface_cell_types):
+        n_cell_owned = self.fsmesh.GetNOwnedCells(cell_type)
+        fs_boundary_markers_celltype = self.fsmesh.GetCellAttribute("CADGroupID",cell_type)
+        np_boundary_markers_celltype_dict[cell_type] = numpy.array(fs_boundary_markers_celltype.Buffer(), copy=True)[:n_cell_owned]
+
+    print("\n\n\n\n\n\n")
+    #exit()
+    #for marker in fs_boundary_marker_list:
+    for marker in np_boundary_marker_list:
       indices_vector = []
+      offset = 0
       for cell_type in self.fs_surface_cell_types:
         n_cell_owned = self.fsmesh.GetNOwnedCells(cell_type)
         n_cell = self.fsmesh.GetNCells(cell_type)
         fs_cell2Node = self.fsmesh.GetCell2Node(cell_type)
         numpy_cell2node_not_raveled = (numpy.array(fs_cell2Node.Buffer(), copy=True) + 1)[:n_cell_owned]
-        fs_boundary_markers_celltype = self.fsmesh.GetCellAttribute("CADGroupID",cell_type)
-        np_boundary_markers_celltype = numpy.array(fs_boundary_markers_celltype.Buffer(), copy=True)[:n_cell_owned]
-
+        np_boundary_markers_celltype = np_boundary_markers_celltype_dict[cell_type]
         if len(numpy.ravel(numpy.argwhere(np_boundary_markers_celltype==marker)))>0:
-          self.list_names_BCs.append(str(self.fsmesh.GetCellAttributeValueName("CADGroupID", marker)))
+          self.list_names_BCs.append(str(self.fsmesh.GetCellAttributeValueName("CADGroupID", int(marker))))
           indices_vector = numpy.ravel(numpy.argwhere(np_boundary_markers_celltype==marker))
-          self.indices_per_boundary.append(indices_vector)
+          offset = self.fsmesh.GetCellOffset(cell_type) - self.nb_vertices
+          self.indices_per_boundary.append(indices_vector+offset)
           self.numpy_cell2node_surface.append(numpy.ravel(numpy_cell2node_not_raveled[indices_vector]))
           self.fs_cell_types_BCs.append(cell_type)
           self.fs_markers.append(marker)
+
     return
 
   def buildCGNSConnectivity(self):
@@ -847,10 +878,8 @@ class Converter_FSDM_CGNS:
       node_bc = Internal.getNodeFromName(zone_bc,bcname)
       boundarystatedataset=Internal.createNode('BCDataSet','BCDataSet_t',parent=node_bc,value='Null')
       boundarystate = Internal.createNode("Boundary",'BCData_t',parent=boundarystatedataset)
-      boundarystate[2].append(["BoundaryMarker",self.fs_markers[idx]*numpy.ones(nb_cell_current_boundary), [], 'DataArray_t'])
-
+      boundarystate[2].append(["BoundaryMarker",int(self.fs_markers[idx])*numpy.ones(nb_cell_current_boundary), [], 'DataArray_t'])
       counter_cells += nb_cell_current_boundary
-
     return
 
   def recoverFlisWallDistance(self):
@@ -927,7 +956,7 @@ class Converter_FSDM_CGNS:
           boundarystatedataset=Internal.getNodeFromType(node_bc,'BCDataSet_t')
           boundarystate = Internal.getNodeFromType(boundarystatedataset,'BCData_t')
           for j,boundary_values_name in enumerate(boundary_values_names_string):
-              boundarystate[2].append([boundary_values_name,boundary_values_numpy[:,j][self.indices_per_boundary[i]], [], 'DataArray_t'])
+              Internal.newDataArray(boundary_values_name, value = boundary_values_numpy[:,j][self.indices_per_boundary[i]], parent = boundarystate)
     return
 
   def exportCGNSmesh(self):
