@@ -812,9 +812,9 @@ class Converter_FSDM_CGNS:
       if i>0:
           shared_markers = list(set(unique_markers[cell_type]) & set(unique_markers[self.fs_surface_cell_types[i-1]])  )
 
+    np_boundary_markers_celltype_dict = {}
     if shared_markers !=[]:
       val = 0
-      np_boundary_markers_celltype_dict = {}
       for i,cell_type in enumerate(self.fs_surface_cell_types):
         n_cell_owned = self.fsmesh.GetNOwnedCells(cell_type)
         fs_boundary_markers_celltype = self.fsmesh.GetCellAttribute("CADGroupID",cell_type)
@@ -977,7 +977,7 @@ class Converter_FSDM_CGNS:
       self.recoverFlowSolutionAugStateVolume()
       self.recoverFlowSolutionAugStateSurface()
       self.recoverFlisWallDistance()
-
+    Cmpi._setProc(self.pytree, Cmpi.rank)
     if self.inmemory: return self.pytree
     else: self.exportCGNSmesh()
 
@@ -1075,17 +1075,20 @@ class Converter_FSDM_CGNS:
         print(self.mesh_name.split(".")[0]+".cgns")
         self.pytree = C.convertFile2PyTree(self.mesh_name.split(".")[0]+".cgns")
       else:
-        raise ValueError("The pytree is empty and you are using MPI. You should call the function convertFSDM2CGNS with the inmemory=True flag first.")
-
+        self.pytree = Cmpi.convertFile2PyTree(self.mesh_name.split(".")[0]+".cgns",proc=Cmpi.rank)
+        #raise ValueError("The pytree is empty and you are using MPI. You should call the function convertFSDM2CGNS with the inmemory=True flag first.")
     # breaking in one zone per type of volume element
+    print("Breaking connectivity..")
     t3 = C.breakConnectivity(self.pytree)
     C._deleteEmptyZones(t3)
 
+    print("Converting array 2 NGon..")
     # convert multielement in Ngon
     t4 = C.convertArray2NGon(t3,recoverBC=False)
     C._deleteFlowSolutions__(t3)
 
     # save the BCs in the correct format for the recoverBC at the end of the function
+    print("Getting BCs..")
     (BCs,BCNames,BCTypes) = C.getBCs(t3)
     true_len_BCs = len(BCs)//len(Internal.getZones(t3))
     BCs = BCs[:true_len_BCs]
@@ -1104,16 +1107,20 @@ class Converter_FSDM_CGNS:
         if Elt[0]!="NGonElements" and Elt[0]!="NFaceElements":
           Internal._rmNodesByName(z,Elt[0])
     #merging in one single zone
+    print("Merging in one single zone..")
     t5 = T.merge(t4)
     #changing the names of the zone
     z = Internal.getZones(t5)[0]
     z[0] = z[0]+"."+str(Cmpi.rank)
 
     #recover BCs
+    print("Recovering BCs..")
     C._recoverBCs(t5,(BCs,BCNames,BCTypes))
+    print("Reorienting..")
     if reorient:
       XOR._reorient(t5)
     if mergeOnProc0:
+      print("Merging on proc 0..")
       t = Cmpi.gatherZones(t5,root=0)
       t = C.newPyTree(['Base',t])
       (BCs,BCNames,BCTypes) = C.getBCs(t)
