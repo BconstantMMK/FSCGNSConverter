@@ -884,9 +884,10 @@ class Converter_FSDM_CGNS:
     return
 
   def recoverFlisWallDistance(self):
-
-    augState_data = self.fsmesh.GetUnstructDataset("FlisWallDistance").GetValues()
-    augState_data_numpy = numpy.array(augState_data.Buffer(),copy=True)
+    for datasetName in self.fsmesh.GetUnstructDatasetNames():
+      if datasetName.EndsWith("Distance") or datasetName.EndsWith("distance") or datasetName.EndsWith("Distances") or datasetName.EndsWith("distances"):
+        augState_data = self.fsmesh.GetUnstructDataset(datasetName).GetValues()
+        augState_data_numpy = numpy.array(augState_data.Buffer(),copy=True)
     indices_GC = numpy.empty(0,dtype=numpy.int32)
     totalNCells = 0
     for idx,cell_type in enumerate(self.fs_volume_cell_types):
@@ -905,8 +906,10 @@ class Converter_FSDM_CGNS:
     return
 
   def recoverFlowSolutionAugStateVolume(self):
-    augState_data = self.fsmesh.GetUnstructDataset("AugState").GetValues()
-    augState_names = self.fsmesh.GetUnstructDataset("AugState").GetNames()
+    for datasetName in self.fsmesh.GetUnstructDatasetNames():
+      if datasetName.StartsWith("State") or datasetName.StartsWith("AugState"):
+        augState_data = self.fsmesh.GetUnstructDataset(datasetName).GetValues()
+        augState_names = self.fsmesh.GetUnstructDataset(datasetName).GetNames()
     indices_GC = numpy.empty(0,dtype=numpy.int32)
     totalNCells = 0
     for idx,cell_type in enumerate(self.fs_volume_cell_types):
