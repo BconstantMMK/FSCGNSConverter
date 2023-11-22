@@ -906,10 +906,15 @@ class Converter_FSDM_CGNS:
     return
 
   def recoverFlowSolutionAugStateVolume(self):
+    nameAugState = None
+    namesDatasets = []
     for datasetName in self.fsmesh.GetUnstructDatasetNames():
-      if datasetName.StartsWith("State") or datasetName.StartsWith("AugState"):
-        augState_data = self.fsmesh.GetUnstructDataset(datasetName).GetValues()
-        augState_names = self.fsmesh.GetUnstructDataset(datasetName).GetNames()
+      namesDatasets.append(str(datasetName))
+    if "AugState" in namesDatasets: nameAugState = "AugState"
+    elif "State" in namesDatasets: nameAugState = "State"
+    else: raise ValueError("The flow solution dataset should be called either \"AugState\" or \"State\"")
+    augState_data = self.fsmesh.GetUnstructDataset(nameAugState).GetValues()
+    augState_names = self.fsmesh.GetUnstructDataset(nameAugState).GetNames()
     indices_GC = numpy.empty(0,dtype=numpy.int32)
     totalNCells = 0
     for idx,cell_type in enumerate(self.fs_volume_cell_types):
@@ -1083,6 +1088,15 @@ class Converter_FSDM_CGNS:
     # breaking in one zone per type of volume element
     print("Breaking connectivity..")
     t3 = C.breakConnectivity(self.pytree)
+    zones = Internal.getZones(t3)
+    for zone in zones:
+        elts = Internal.getNodesFromType(zone,"Elements_t")
+        bcs = Internal.getNodesFromType(zone,"BC_t")
+        for n_bc,(elt,bc) in enumerate(zip(elts[1:],bcs)):
+          ER_el = Internal.getNodeFromName(elt,"ElementRange")
+          ER_bc = Internal.getNodeFromName(bc,"ElementRange")
+          if (ER_el[1] != ER_bc[1][0]).all():
+              ER_bc[1][0] = ER_el[1]
     C._deleteEmptyZones(t3)
 
     print("Converting array 2 NGon..")
@@ -1118,7 +1132,7 @@ class Converter_FSDM_CGNS:
 
     #recover BCs
     print("Recovering BCs..")
-    C._recoverBCs(t5,(BCs,BCNames,BCTypes))
+    _recoverBCs(t5,(BCs,BCNames,BCTypes))
     print("Reorienting..")
     if reorient:
       XOR._reorient(t5)
@@ -1134,6 +1148,36 @@ class Converter_FSDM_CGNS:
       t = C.newPyTree(['Base', t5])
     return t
 
+def _recoverBCs(t,T):
+    (BCs,BCNames,BCTypes) = T
+    hook = C.createHook(t, 'faceCenters')
+
+    for nobc, bc in enumerate(BCs):
+
+      ids = C.identifyElements(hook, bc, tol=1e-6)
+      ids = ids[ids[:] > -1]
+      ids = ids.tolist()
+
+      if len(ids)>0:
+        C._addBC2Zone(t, BCNames[nobc], BCTypes[nobc], faceList=ids)
+        # Recupere BCDataSets
+        fsc = Internal.getNodeFromName(bc, Internal.__FlowSolutionCenters__)
+        if fsc is not None:
+          newNameOfBC = C.getLastBCName(BCNames[nobc])
+          bcz = Internal.getNodeFromNameAndType(t, newNameOfBC, 'BC_t')
+          ds = Internal.newBCDataSet(name='BCDataSet', value='UserDefined',
+                                   gridLocation='FaceCenter', parent=bcz)
+          d = Internal.newBCData('NeumannData', parent=ds)
+
+          for node in Internal.getChildren(fsc):
+            if Internal.isType(node, 'DataArray_t'):
+              val0 = Internal.getValue(node)
+              if isinstance(val0,numpy.ndarray) or isinstance(val0,list):
+                val0 = numpy.reshape(val0, val0.size, order='F')
+              else:
+                val0 = numpy.reshape([val0], 1, order='F')
+              Internal._createUniqueChild(d, node[0], 'DataArray_t', value=val0)
+    return None
 
 def create_Quad2Quad(coordinates, nonconformal_faces, nonconformal_faces_ctr,plane="xy",tol=1e-6):
 
