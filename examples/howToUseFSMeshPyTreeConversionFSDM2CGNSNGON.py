@@ -3,6 +3,7 @@ import os, sys
 # import the stuff we need from FSDM
 import FSDM
 from FSDataManager import FSClac, FSLog, FSError, FSMesh
+import Converter.Mpi as Cmpi
 
 import FSMeshPyTreeConversion
 from FSMeshPyTreeConversion.FSDM_CGNS import Converter_FSDM_CGNS
@@ -26,13 +27,13 @@ print("------ Conversion FSDM -> CGNS -------")
 
  #for FFD you will need keepFlowSolution=True
 fsdm2cgns = Converter_FSDM_CGNS("mesh.grid",keepFlowSolution=False,dict_BCs=dict_BCs,inmemory=True)
-t = fsdm2cgns.convertFSDM2CGNS()
+fsdm2cgns.convertFSDM2CGNS()
 
 print("------ Conversion CGNS multielement -> CGNS Ngon -------")
 
 # Attention when using mergeOnProc0=True because the "allGather" behind this option may require too much memory and make the conversion crash.
 # mergeOnProc=False is advised, the output will be one pytree, with one zone per processor (however not yet supported by FFD).
 
-t = fsdm2cgns.convertMonozoneME2Ngon4FFD(reorient=True,mergeOnProc0=False)
+fsdm2cgns.convertMonozoneME2Ngon4FFD(reorient=True,mergeOnProc0=False)
 
-Cmpi.convertPyTree2File(t,"mesh_ngon.cgns")
+Cmpi.convertPyTree2File(fsdm2cgns.pytree,"mesh_ngon.cgns")
