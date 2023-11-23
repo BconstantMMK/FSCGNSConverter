@@ -987,7 +987,7 @@ class Converter_FSDM_CGNS:
       self.recoverFlisWallDistance()
     if Cmpi.size>1:
       Cmpi._setProc(self.pytree, Cmpi.rank)
-      zones = Internal.getZones(C_FC.pytree)
+      zones = Internal.getZones(self.pytree)
       for z in zones:
         z[0] = z[0]+str(Cmpi.rank)
     if self.inmemory: return None
