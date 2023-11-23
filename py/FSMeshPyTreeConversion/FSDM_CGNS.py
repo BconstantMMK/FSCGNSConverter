@@ -973,7 +973,7 @@ class Converter_FSDM_CGNS:
     C.convertPyTree2File(self.pytree, self.mesh_name.split('.')[0]+".cgns")
     C.convertPyTree2File(self.pytree, self.mesh_name.split('.')[0]+".plt")
     Internal.printTree(self.pytree)
-    return
+    return None
 
   def convertFSDM2CGNS(self):
     self.recoverInfoMeshFSDM()
@@ -985,9 +985,14 @@ class Converter_FSDM_CGNS:
       self.recoverFlowSolutionAugStateVolume()
       self.recoverFlowSolutionAugStateSurface()
       self.recoverFlisWallDistance()
-    Cmpi._setProc(self.pytree, Cmpi.rank)
-    if self.inmemory: return self.pytree
+    if Cmpi.size>1:
+      Cmpi._setProc(self.pytree, Cmpi.rank)
+      zones = Internal.getZones(C_FC.pytree)
+      for z in zones:
+        z[0] = z[0]+str(Cmpi.rank)
+    if self.inmemory: return None
     else: self.exportCGNSmesh()
+    return None
 
   def initializePseudoCell_QuadNQuad(self,z_NCfaces):
     ##### CREATE QUAD2QUAD CONNECTIVITY for OCTREE meshes #########
@@ -1084,10 +1089,10 @@ class Converter_FSDM_CGNS:
         self.pytree = C.convertFile2PyTree(self.mesh_name.split(".")[0]+".cgns")
       else:
         self.pytree = Cmpi.convertFile2PyTree(self.mesh_name.split(".")[0]+".cgns",proc=Cmpi.rank)
-        #raise ValueError("The pytree is empty and you are using MPI. You should call the function convertFSDM2CGNS with the inmemory=True flag first.")
     # breaking in one zone per type of volume element
     print("Breaking connectivity..")
     t3 = C.breakConnectivity(self.pytree)
+
     zones = Internal.getZones(t3)
     for zone in zones:
         elts = Internal.getNodesFromType(zone,"Elements_t")
@@ -1101,13 +1106,15 @@ class Converter_FSDM_CGNS:
 
     print("Converting array 2 NGon..")
     # convert multielement in Ngon
-    t4 = C.convertArray2NGon(t3,recoverBC=False)
+    self.pytree = C.convertArray2NGon(t3,recoverBC=False)
     C._deleteFlowSolutions__(t3)
 
     # save the BCs in the correct format for the recoverBC at the end of the function
     print("Getting BCs..")
     (BCs,BCNames,BCTypes) = C.getBCs(t3)
     true_len_BCs = len(BCs)//len(Internal.getZones(t3))
+
+    del t3
     BCs = BCs[:true_len_BCs]
     BCNames = BCNames[:true_len_BCs]
     BCTypes = BCTypes[:true_len_BCs]
@@ -1117,7 +1124,7 @@ class Converter_FSDM_CGNS:
         Internal._rmNodesByName(BC,Elts[0][0])
 
     # Multizone NGON getting rid of useless nodes
-    zones = Internal.getZones(t4)
+    zones = Internal.getZones(self.pytree)
     for z in zones:
       Elts = Internal.getNodesFromType(z,"Elements_t")
       for Elt in Elts:
@@ -1125,28 +1132,28 @@ class Converter_FSDM_CGNS:
           Internal._rmNodesByName(z,Elt[0])
     #merging in one single zone
     print("Merging in one single zone..")
-    t5 = T.merge(t4)
+    self.pytree = T.merge(self.pytree)
     #changing the names of the zone
-    z = Internal.getZones(t5)[0]
+    z = Internal.getZones(self.pytree)[0]
     z[0] = z[0]+"."+str(Cmpi.rank)
 
     #recover BCs
     print("Recovering BCs..")
-    _recoverBCs(t5,(BCs,BCNames,BCTypes))
+    _recoverBCs(self.pytree,(BCs,BCNames,BCTypes))
     print("Reorienting..")
     if reorient:
-      XOR._reorient(t5)
+      XOR._reorient(self.pytree)
     if mergeOnProc0:
       print("Merging on proc 0..")
-      t = Cmpi.gatherZones(t5,root=0)
-      t = C.newPyTree(['Base',t])
-      (BCs,BCNames,BCTypes) = C.getBCs(t)
-      z_merged = T.merge(t)
-      C._recoverBCs(z_merged,(BCs,BCNames,BCTypes))
-      t = C.newPyTree(['Base', z_merged])
+      self.pytree = Cmpi.gatherZones(self.pytree,root=0)
+      self.pytree = C.newPyTree(['Base',self.pytree])
+      (BCs,BCNames,BCTypes) = C.getBCs(self.pytree)
+      self.pytree = T.merge(self.pytree)
+      C._recoverBCs(self.pytree,(BCs,BCNames,BCTypes))
+      self.pytree = C.newPyTree(['Base', self.pytree])
     else:
-      t = C.newPyTree(['Base', t5])
-    return t
+      self.pytree = C.newPyTree(['Base', self.pytree])
+    return None
 
 def _recoverBCs(t,T):
     (BCs,BCNames,BCTypes) = T
@@ -1177,6 +1184,7 @@ def _recoverBCs(t,T):
               else:
                 val0 = numpy.reshape([val0], 1, order='F')
               Internal._createUniqueChild(d, node[0], 'DataArray_t', value=val0)
+    C.freeHook(hook)
     return None
 
 def create_Quad2Quad(coordinates, nonconformal_faces, nonconformal_faces_ctr,plane="xy",tol=1e-6):
