@@ -804,6 +804,7 @@ class Converter_FSDM_CGNS:
     fs_boundary_marker_list = self.fsmesh.GetCellAttributeValuesWithNames("CADGroupID")
     np_boundary_marker_list = numpy.array(fs_boundary_marker_list.Buffer(),copy=True)
     unique_markers = {}
+    shared_markers = []
     for i,cell_type in enumerate(self.fs_surface_cell_types):
       n_cell_owned = self.fsmesh.GetNOwnedCells(cell_type)
       fs_boundary_markers_celltype = self.fsmesh.GetCellAttribute("CADGroupID",cell_type)
@@ -814,24 +815,25 @@ class Converter_FSDM_CGNS:
 
     np_boundary_markers_celltype_dict = {}
     if shared_markers !=[]:
+      print(shared_markers)
       val = 0
       for i,cell_type in enumerate(self.fs_surface_cell_types):
         n_cell_owned = self.fsmesh.GetNOwnedCells(cell_type)
         fs_boundary_markers_celltype = self.fsmesh.GetCellAttribute("CADGroupID",cell_type)
         np_boundary_markers_celltype = numpy.array(fs_boundary_markers_celltype.Buffer(), copy=True)[:n_cell_owned]
         for shared_marker in shared_markers:
-          np_boundary_markers_celltype_dict[cell_type] = numpy.where(np_boundary_markers_celltype==shared_marker, shared_marker+val,np_boundary_markers_celltype)
-        if (shared_marker+val) not in np_boundary_marker_list: np_boundary_marker_list = numpy.append(np_boundary_marker_list,shared_marker+val)
-        self.dict_bcs[shared_marker+val] = self.dict_bcs[shared_marker]
+          np_boundary_markers_celltype = numpy.where(np_boundary_markers_celltype==shared_marker, shared_marker+val,np_boundary_markers_celltype)
+          if (shared_marker+val) not in np_boundary_marker_list:
+              np_boundary_marker_list = numpy.append(np_boundary_marker_list,shared_marker+val)
+          self.dict_bcs[shared_marker+val] = self.dict_bcs[shared_marker]
+        np_boundary_markers_celltype_dict[cell_type] = np_boundary_markers_celltype
         val+=0.1
     else:
       for i,cell_type in enumerate(self.fs_surface_cell_types):
         n_cell_owned = self.fsmesh.GetNOwnedCells(cell_type)
         fs_boundary_markers_celltype = self.fsmesh.GetCellAttribute("CADGroupID",cell_type)
         np_boundary_markers_celltype_dict[cell_type] = numpy.array(fs_boundary_markers_celltype.Buffer(), copy=True)[:n_cell_owned]
-
     print("\n\n\n\n\n\n")
-    #exit()
     #for marker in fs_boundary_marker_list:
     for marker in np_boundary_marker_list:
       indices_vector = []
@@ -871,9 +873,9 @@ class Converter_FSDM_CGNS:
 
       nb_cell_current_boundary = len(self.numpy_cell2node_surface[idx])//nb_vertex_per_cell
 
-      ELT = Internal.newElements(name = self.list_names_BCs[idx].split(".")[0]+"."+self.CellTypesFS2Cassiopee(fs_cell_type), etype = self.CellTypesFS2Cassiopee(fs_cell_type),erange =[counter_cells, counter_cells+nb_cell_current_boundary-1], econnectivity = self.numpy_cell2node_surface[idx],  eboundary = nb_cell_current_boundary, parent = pytree_zone)
+      bcname = self.list_names_BCs[idx].split(".")[0]+"."+self.CellTypesFS2Cassiopee(fs_cell_type)+"_"+str(int(self.fs_markers[idx]))
+      ELT = Internal.newElements(name = bcname, etype = self.CellTypesFS2Cassiopee(fs_cell_type),erange =[counter_cells, counter_cells+nb_cell_current_boundary-1], econnectivity = self.numpy_cell2node_surface[idx],  eboundary = nb_cell_current_boundary, parent = pytree_zone)
       bctype = self.dict_bcs[self.fs_markers[idx]]
-      bcname = self.list_names_BCs[idx].split(".")[0]+"."+self.CellTypesFS2Cassiopee(fs_cell_type)
       C._addBC2Zone(pytree_zone,bcname,bctype, elementRange=[counter_cells,counter_cells+nb_cell_current_boundary-1])
       zone_bc =  Internal.getNodeFromType(pytree_zone,"ZoneBC_t")
       node_bc = Internal.getNodeFromName(zone_bc,bcname)
