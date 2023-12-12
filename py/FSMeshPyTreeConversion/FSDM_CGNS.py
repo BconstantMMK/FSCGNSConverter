@@ -885,6 +885,37 @@ class Converter_FSDM_CGNS:
       counter_cells += nb_cell_current_boundary
     return
 
+  def recoverFlowSolutionBodyForce(self):
+    nameBodyForce = None
+    for datasetName in self.fsmesh.GetUnstructDatasetNames():
+      if datasetName.StartsWith("BodyForce"):
+        nameBodyForce = datasetName
+        augState_data = self.fsmesh.GetUnstructDataset(nameBodyForce).GetValues()
+        augState_names = self.fsmesh.GetUnstructDataset(nameBodyForce).GetNames()
+    if nameBodyForce == None:
+      return
+    else:
+      indices_GC = numpy.empty(0,dtype=numpy.int32)
+      totalNCells = 0
+      for idx,cell_type in enumerate(self.fs_volume_cell_types):
+         NOwnedCells = self.fsmesh.GetNOwnedCells(cell_type)
+         NGhostCells = self.fsmesh.GetNGhostCells(cell_type)
+         NCells = self.fsmesh.GetNCells(cell_type)
+         indices_GC = numpy.concatenate([indices_GC,numpy.arange(totalNCells+NOwnedCells,totalNCells+NCells)])
+         totalNCells += NCells
+      augState_data_numpy = numpy.array(augState_data.Buffer(),copy=True)
+      augState_data_numpy = numpy.delete(augState_data_numpy, indices_GC,axis=0)
+      augState_names_string = []
+      for name in augState_names:
+        augState_names_string.append("SourceTerm."+str(name))
+
+      zone = Internal.getZones(self.pytree)[0]
+      FS = Internal.getNodeFromName(zone,'FlowSolution#Centers')
+      for i,augState_name in enumerate(augState_names_string):
+        Internal.newDataArray(augState_name, value = augState_data_numpy[:,i], parent = FS)
+
+      return
+
   def recoverFlisWallDistance(self):
     for datasetName in self.fsmesh.GetUnstructDatasetNames():
       if datasetName.EndsWith("Distance") or datasetName.EndsWith("distance") or datasetName.EndsWith("Distances") or datasetName.EndsWith("distances"):
@@ -902,7 +933,7 @@ class Converter_FSDM_CGNS:
     augState_data_numpy = numpy.delete(augState_data_numpy, indices_GC,axis=0)
 
     zone = Internal.getZones(self.pytree)[0]
-    FS = Internal.getNodeFromType(zone,'FlowSolution_t')
+    FS = Internal.getNodeFromName(zone,'FlowSolution#Centers')
     Internal.newDataArray("TurbulentDistance", value = augState_data_numpy[:,0], parent = FS)
 
     return
@@ -987,6 +1018,7 @@ class Converter_FSDM_CGNS:
       self.recoverFlowSolutionAugStateVolume()
       self.recoverFlowSolutionAugStateSurface()
       self.recoverFlisWallDistance()
+      self.recoverFlowSolutionBodyForce()
     if Cmpi.size>1:
       Cmpi._setProc(self.pytree, Cmpi.rank)
       zones = Internal.getZones(self.pytree)
@@ -1155,7 +1187,30 @@ class Converter_FSDM_CGNS:
       self.pytree = C.newPyTree(['Base', self.pytree])
     else:
       self.pytree = C.newPyTree(['Base', self.pytree])
+
+    _fixNodesForBodyForces(self.pytree)
+
     return None
+
+def _fixNodesForBodyForces(t):
+
+  FS_C = Internal.getNodeFromName(t,"FlowSolution#Centers")
+  BodyForceDatasets = []
+  for node in FS_C[2][1:]:
+    if node[0].split(".")[0] == "SourceTerm":
+      BodyForceDatasets.append(node[0])
+
+  if BodyForceDatasets != []:
+    zone = Internal.getZones(t)[0]
+    FS_ST = Internal.newFlowSolution(name='FlowSolution#SourceTerm', gridLocation='CellCenter', parent=zone)
+    for bfname in BodyForceDatasets:
+      nodeBF = Internal.getNodeFromName(FS_C,bfname)
+      Internal.newDataArray(bfname.split(".")[1], value = nodeBF[1], parent = FS_ST)
+      Internal._rmNodesByName(FS_C,bfname)
+
+  return None
+
+
 
 def _recoverBCs(t,T):
     (BCs,BCNames,BCTypes) = T
