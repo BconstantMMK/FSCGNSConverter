@@ -1126,7 +1126,7 @@ class Converter_FSDM_CGNS:
     # breaking in one zone per type of volume element
     print("Breaking connectivity..")
     t3 = C.breakConnectivity(self.pytree)
-
+    # Attention: bug solved in Cassiopee 4.0 -> lines from 1130 to 1138 must be deleted with the new release
     zones = Internal.getZones(t3)
     for zone in zones:
         elts = Internal.getNodesFromType(zone,"Elements_t")
@@ -1141,6 +1141,7 @@ class Converter_FSDM_CGNS:
     print("Converting array 2 NGon..")
     # convert multielement in Ngon
     self.pytree = C.convertArray2NGon(t3,recoverBC=False)
+    self.pytree = G.close(self.pytree)
     C._deleteFlowSolutions__(t3)
 
     # save the BCs in the correct format for the recoverBC at the end of the function
@@ -1188,7 +1189,7 @@ class Converter_FSDM_CGNS:
     else:
       self.pytree = C.newPyTree(['Base', self.pytree])
 
-    _fixNodesForBodyForces(self.pytree)
+    if self.keepFlowSolution: _fixNodesForBodyForces(self.pytree)
 
     return None
 
