@@ -17,7 +17,7 @@ import os, sys,time
 
 class Converter_FSDM_CGNS:
 
-  def __init__(self,mesh_name="mesh",clac=FSClac(),fsmesh=FSMesh(FSClac()),dimPb=2,invertPlanesYZ=False,conformal=True,IBM=False,IBM_parameters={},keepFlowSolution=False,dict_BCs={},inmemory=False):
+  def __init__(self,mesh_name="mesh",clac=FSClac(),fsmesh=None,dimPb=2,invertPlanesYZ=False,conformal=True,IBM=False,IBM_parameters={},keepFlowSolution=False,dict_BCs={},inmemory=False):
 
     #Parameters passed as arguments
     self.mesh_name = mesh_name
@@ -655,6 +655,7 @@ class Converter_FSDM_CGNS:
 
   def recoverInfoMeshFSDM(self,ghostCells=False):
     if self.fsmesh==None:
+      self.fsmesh = FSMesh(self.clac)
       #Import mesh
       if self.mesh_name.split('.')[-1] == 'h5' :
         command = "ImportMeshHDF5"
