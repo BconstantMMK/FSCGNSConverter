@@ -1191,7 +1191,7 @@ class Converter_FSDM_CGNS:
     self.pytree = T.merge(self.pytree)
     #changing the names of the zone
     z = Internal.getZones(self.pytree)[0]
-    z[0] = z[0]+"."+str(Cmpi.rank)
+    z[0] = "zone."+str(Cmpi.rank)
 
     #recover BCs
     print("Recovering BCs..")
@@ -1213,6 +1213,50 @@ class Converter_FSDM_CGNS:
     if self.keepFlowSolution: _fixNodesForBodyForces(self.pytree)
 
     return None
+
+  def test(self,mesh,DATA,TOLERANCE=1e-11):
+    """Test pyTrees."""
+    import KCore.test as test
+
+    # Transforme t en pyTree, pour pouvoir relire la reference
+    t, ntype = Internal.node2PyTree(self.pytree)
+
+    # Check OWNDATA / copy
+    C._ownNumpyArrays(t)
+
+    # Check Data directory
+    a = os.access(DATA, os.F_OK)
+    if not a:
+        print("Data directory doesn't exist. Created.")
+        os.mkdir(DATA)
+
+    # Construit le nom du fichier de reference
+    reference = DATA+"/"+mesh.split(".")[0]+".cgns"
+    a = os.access(reference, os.R_OK)
+    if not a:
+        print("Warning: reference file %s has been created."%reference)
+        C.convertPyTree2File(t, reference, 'bin_pickle')
+        return True
+    else:
+        old = C.convertFile2PyTree(reference, 'bin_pickle')
+        test.checkTree(t, old)
+
+        TOLERANCE = 1e-11
+        ret = C.diffArrays(t, old)
+        C._fillMissingVariables(ret)
+        allvars = C.getVarNames(ret)
+        if len(allvars) > 0: mvars = allvars[0]
+        else: mvars = []
+        retour = True
+
+        for v in mvars:
+            l0 = C.normL0(ret, v)
+            l2 = C.normL2(ret, v)
+            if l0 > TOLERANCE:
+                print('DIFF: Variable=%s, L0=%.12f, L2=%.12f'%(v,l0,l2))
+                retour = False
+
+    return retour
 
 def _fixNodesForBodyForces(t):
 
