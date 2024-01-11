@@ -1239,24 +1239,28 @@ class Converter_FSDM_CGNS:
         return True
     else:
         old = C.convertFile2PyTree(reference, 'bin_pickle')
-        test.checkTree(t, old)
-
-        TOLERANCE = 1e-11
-        ret = C.diffArrays(t, old)
-        C._fillMissingVariables(ret)
-        allvars = C.getVarNames(ret)
-        if len(allvars) > 0: mvars = allvars[0]
-        else: mvars = []
-        retour = True
-
-        for v in mvars:
-            l0 = C.normL0(ret, v)
-            l2 = C.normL2(ret, v)
-            if l0 > TOLERANCE:
-                print('DIFF: Variable=%s, L0=%.12f, L2=%.12f'%(v,l0,l2))
-                retour = False
-
+        retour = checkTree(t, old)
     return retour
+
+def checkTree(t1, t2):
+    import KCore.test as test
+    """Check that pyTree t1 and t2 are identical."""
+    dict1 = {}
+    test.buildDict__('.', dict1, t1)
+    dict2 = {}
+    test.buildDict__('.', dict2, t2)
+    for k in dict2.keys():
+        node2 = dict2[k]
+        # cherche le noeud equivalent dans t1
+        if k not in dict1:
+            print('DIFF: node %s existe dans reference mais pas dans courant.'%k)
+        else:
+            node1 = dict1[k]
+            r = test.checkTree__(node1, node2)
+            if r == 0:
+              return False
+    return True
+
 
 def _fixNodesForBodyForces(t):
 
