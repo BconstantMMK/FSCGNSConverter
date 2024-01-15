@@ -929,10 +929,12 @@ class Converter_FSDM_CGNS:
       return
 
   def recoverFlisWallDistance(self):
+    presentFlag = False
     for datasetName in self.fsmesh.GetUnstructDatasetNames():
       if datasetName.EndsWith("Distance") or datasetName.EndsWith("distance") or datasetName.EndsWith("Distances") or datasetName.EndsWith("distances"):
         augState_data = self.fsmesh.GetUnstructDataset(datasetName).GetValues()
         augState_data_numpy = numpy.array(augState_data.Buffer(),copy=True)
+        presentFlag = True
     indices_GC = numpy.empty(0,dtype=numpy.int32)
     totalNCells = 0
     for idx,cell_type in enumerate(self.fs_volume_cell_types):
@@ -941,12 +943,12 @@ class Converter_FSDM_CGNS:
        NCells = self.fsmesh.GetNCells(cell_type)
        indices_GC = numpy.concatenate([indices_GC,numpy.arange(totalNCells+NOwnedCells,totalNCells+NCells)])
        totalNCells += NCells
-    augState_data_numpy = numpy.array(augState_data.Buffer(),copy=True)
-    augState_data_numpy = numpy.delete(augState_data_numpy, indices_GC,axis=0)
-
-    zone = Internal.getZones(self.pytree)[0]
-    FS = Internal.getNodeFromName(zone,'FlowSolution#Centers')
-    Internal.newDataArray("TurbulentDistance", value = augState_data_numpy[:,0], parent = FS)
+    if presentFlag:
+      augState_data_numpy = numpy.array(augState_data.Buffer(),copy=True)
+      augState_data_numpy = numpy.delete(augState_data_numpy, indices_GC,axis=0)
+      zone = Internal.getZones(self.pytree)[0]
+      FS = Internal.getNodeFromName(zone,'FlowSolution#Centers')
+      Internal.newDataArray("TurbulentDistance", value = augState_data_numpy[:,0], parent = FS)
 
     return
 
