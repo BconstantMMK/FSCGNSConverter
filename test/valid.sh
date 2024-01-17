@@ -5,4 +5,7 @@ export PYTHONPATH=$FSMESHPYTREECONVERSION_DIR/py/FSMeshPyTreeConversion/:$PYTHON
 
 set -e
 #./run_MPI-OPENMP.sh -n 1 -t 1 -cmd python3 launchConversion.py
-./run_MPI-OPENMP.sh -n 1 -t 1 -cmd python3 launchCheckSurfaceAndBoundaryCoefficients.py
+#./run_MPI-OPENMP.sh -n 1 -t 1 -cmd python3 launchCheckSurfaceAndBoundaryCoefficients.py
+
+./run_MPI-OPENMP.sh -n 24 -t 1 -cmd python3 launchConversionParallel24.py
+./run_MPI-OPENMP.sh -n 1 -t 1 -cmd python3 launchCheckSurfaceAndBoundaryCoefficientsParallel24.py
