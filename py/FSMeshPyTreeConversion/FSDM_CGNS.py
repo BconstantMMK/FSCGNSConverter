@@ -890,7 +890,9 @@ class Converter_FSDM_CGNS:
         bctype = self.dict_bcs[self.fs_markers[idx]]
         C._addBC2Zone(pytree_zone,bcname,bctype, elementRange=[counter_cells,counter_cells+nb_cell_current_boundary-1])
         zone_bc =  Internal.getNodeFromType(pytree_zone,"ZoneBC_t")
-        node_bc = Internal.getNodeFromName(zone_bc,bcname)
+        lastbcname = C.getLastBCName(bcname)
+        node_bc = Internal.getNodeFromName(zone_bc,lastbcname)
+        node_bc[0] = bcname
         boundarystatedataset=Internal.createNode('BCDataSet','BCDataSet_t',parent=node_bc,value='Null')
         boundarystate = Internal.createNode("Boundary",'BCData_t',parent=boundarystatedataset)
         boundarystate[2].append(["BoundaryMarker",int(self.fs_markers[idx])*numpy.ones(nb_cell_current_boundary), [], 'DataArray_t'])

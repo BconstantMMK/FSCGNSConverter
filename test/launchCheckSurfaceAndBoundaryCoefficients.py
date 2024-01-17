@@ -4,10 +4,11 @@ import Helpers_test
 
 dictionary_BCs = {
     "naca0012_hexa.h5": {1 : 'BCSymmetryPlane', 2 : 'BCSymmetryPlane', 3 : 'BCOutflow', 4 : 'BCOutflow', 5 : 'BCWallViscous', 6 : 'BCFarfield'}, #1
+    "naca0012_prism.h5": {1 : 'BCSymmetryPlane', 2 : 'BCSymmetryPlane', 3 : 'BCFarfield', 4 : 'BCWallViscous', 5 : 'BCWallViscous'}, #2
     "rae_hexa_prism.h5": {1:"BCSymmetryPlane", 2:"BCSymmetryPlane", 3:"BCWallViscous", 5:"BCFarfield"}, #6
     "M6_pyra_tetra_hexa.h5": {1 : 'BCWallViscous', 2 : 'BCWallViscous', 3 : 'BCWallViscous', 4 : 'BCSymmetryPlane', 5 : 'BCFarfield'}, #10
 }
-alpha = [1.25,2.79,3.06]
+alpha = [1.25,1.25,2.79,3.06]
 
 meshes = dictionary_BCs.keys()
 bcs = dictionary_BCs.values()

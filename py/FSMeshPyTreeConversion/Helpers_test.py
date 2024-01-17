@@ -4,7 +4,7 @@ import Converter.Internal as Internal
 import Generator.PyTree as G
 import Transform.PyTree as T
 import Post.PyTree as P
-import numpy, os, math
+import numpy, os, math,sys
 
 
 
@@ -230,8 +230,10 @@ def computeWallSurfaceCODA(mesh_name,dict_BCs,alpha=0.0):
     return res
 
 def computeWallSurfaceCassiopee(mesh_name,alpha=0.0):
-
-    t = C.convertFile2PyTree(mesh_name,"bin_pickle")
+    try:
+      t = C.convertFile2PyTree(mesh_name,"bin_pickle")
+    except:
+      t = C.convertFile2PyTree(mesh_name,"bin_cgns")
     wall = C.extractBCOfType(t,"BCWall")
     G._getVolumeMap(wall)
     G._getNormalMap(wall)
@@ -283,3 +285,60 @@ def computeWallSurfaceCassiopee(mesh_name,alpha=0.0):
       surface += numpy.sum(volumes[i][1])
     res = ['surf,clp,cdp,clf,cdf', numpy.array([[surface], [clp], [cdp], [clf], [cdf]]),1,1,1]
     return res
+
+def test(t,number,TOLERANCE=1e-11):
+  """Test pyTrees."""
+  import KCore.test as test
+  # Transforme t en pyTree, pour pouvoir relire la reference
+  t, ntype = Internal.node2PyTree(t)
+
+  # Verifie la compatibilite avec la CGNS lib
+  #checkCGNSlib(t, number)
+
+  # Check OWNDATA / copy
+  C._ownNumpyArrays(t)
+  DATA = "Data"
+  # Check Data directory
+  a = os.access(DATA, os.F_OK)
+  if not a:
+      print("Data directory doesn't exist. Created.")
+      os.mkdir(DATA)
+
+  # Construit le nom du fichier de reference
+  fileName = sys.argv[0]
+  baseName = os.path.basename(fileName)
+  dirName = os.path.dirname(fileName)
+  fileName = os.path.splitext(baseName)[0]
+  if dirName == '': reference = '%s/%s.ref%d'%(DATA, fileName, number)
+  else: reference = '%s/%s/%s.ref%d'%(dirName, DATA, fileName, number)
+  a = os.access(reference, os.R_OK)
+
+  if not a:
+      print("Warning: reference file %s has been created."%reference)
+      C.convertPyTree2File(t, reference, 'bin_cgns')
+      return True
+  else:
+      old = C.convertFile2PyTree(reference, 'bin_cgns')
+      retour = checkTree(t, old)
+  return retour
+
+def checkTree(t1, t2):
+    import KCore.test as test
+    """Check that pyTree t1 and t2 are identical."""
+    dict1 = {}
+    test.buildDict__('.', dict1, t1)
+    dict2 = {}
+    test.buildDict__('.', dict2, t2)
+    for k in dict2.keys():
+        node2 = dict2[k]
+        # cherche le noeud equivalent dans t1
+        if k not in dict1:
+            print('DIFF: node %s existe dans reference mais pas dans courant.'%k)
+            return False
+        else:
+            node1 = dict1[k]
+            r = test.checkTree__(node1, node2)
+            if r == 0:
+              return False
+    return True
+
