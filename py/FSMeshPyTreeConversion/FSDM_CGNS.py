@@ -155,7 +155,8 @@ class Converter_FSDM_CGNS:
     for idx,bc in enumerate(bcs_node):
       bcname = Internal.getName(bc)
       if bcname != "NonConformalFaces":
-        if bcname[-5:] != ".QUAD" and bcname[-4:] != ".TRI":
+        #if bcname[-5:] != ".QUAD" and bcname[-4:] != ".TRI":
+        if not ".QUAD" in bc[0] and not "TRI" in bc[0]:
           bc[0]=self.list_names_BCs[idx]
         print("bc[0]=", bcname)
         if Internal.getNodeFromType(bc, "IndexArray_t")!=None:
@@ -284,7 +285,8 @@ class Converter_FSDM_CGNS:
       #if self.IBM==True: self.list_names_BCs.append("IBMWall")
       zbcs=[]; bctypes=[]; bcs=[];
       for bc in Internal.getNodesFromType(z,'BC_t'):
-        if bc[0][-5:] != ".QUAD" and bc[0][-4:] != ".TRI":
+        #if bc[0][-5:] != ".QUAD" and bc[0][-4:] != ".TRI":
+        if not ".QUAD" in bc[0] and not "TRI" in bc[0]:
           self.list_names_BCs.append(bc[0].replace('.', ''))
         else:
           self.list_names_BCs.append(bc[0].split(".")[0])
@@ -502,9 +504,9 @@ class Converter_FSDM_CGNS:
       self.boundary_marker_to_bc_name[bc_boundary_marker] = bc_name
       self.boundary_marker_to_point_list[bc_boundary_marker] = point_list
 
-      if len(bc_name.split("."))>1 and bc_name.split(".")[1]== "TRI":
+      if len(bc_name.split("."))>1 and bc_name.split(".")[1].startswith("TRI"):
         self.dict_bc_elts["TRI"].append(bc_boundary_marker)
-      elif len(bc_name.split("."))>1 and bc_name.split(".")[1]== "QUAD":
+      elif len(bc_name.split("."))>1 and bc_name.split(".")[1].startswith("QUAD"):
         self.dict_bc_elts["QUAD"].append(bc_boundary_marker)
 
       bc_dataset_node = Internal.getNodeFromType(bc_node, "BCDataSet_t")
