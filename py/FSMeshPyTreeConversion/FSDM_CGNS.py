@@ -1142,6 +1142,12 @@ class Converter_FSDM_CGNS:
       info[2].append(["UserDefined", zdnrName, [], 'UserDefinedData_t'])
     return None
 
+  def deleteUselessVariables(self):
+    del self.conformal, self.dimPb, self.IBM, self.IBM_parameters, self.invertPlanesYZ
+    del self.meshType, self.nb_vertices, self.fs_surface_cell_types, self.fs_volume_cell_types, self.fs_cell_types, self.fs_cell_types_BCs
+    del self.coordinatesX, self.coordinatesY, self.coordinatesZ, self.numpy_cell2node, self.numpy_cell2node_volume, self.numpy_cell2node_surface, self.numpy_range, self.indices_per_boundary
+    del self.fsmesh, self.list_names_BCs,  self.fs_markers, self.boundary_marker_to_bc_name, self.boundary_marker_to_point_list, self.dict_bcs
+
   def convertMonozoneME2Ngon4FFD(self,reorient=True,mergeOnProc0=False):
 
     if Internal.getZones(self.pytree) == []:
@@ -1150,19 +1156,22 @@ class Converter_FSDM_CGNS:
         self.pytree = C.convertFile2PyTree(self.mesh_name.split(".")[0]+".cgns")
       else:
         self.pytree = Cmpi.convertFile2PyTree(self.mesh_name.split(".")[0]+".cgns",proc=Cmpi.rank)
+    else:
+      self.deleteUselessVariables()
     # breaking in one zone per type of volume element
     print("Breaking connectivity..")
     t3 = C.breakConnectivity(self.pytree)
-    # Attention: bug solved in Cassiopee 4.0 -> lines from 1130 to 1138 must be deleted with the new release
-    zones = Internal.getZones(t3)
-    for zone in zones:
-        elts = Internal.getNodesFromType(zone,"Elements_t")
-        bcs = Internal.getNodesFromType(zone,"BC_t")
-        for n_bc,(elt,bc) in enumerate(zip(elts[1:],bcs)):
-          ER_el = Internal.getNodeFromName(elt,"ElementRange")
-          ER_bc = Internal.getNodeFromName(bc,"ElementRange")
-          if (ER_el[1] != ER_bc[1][0]).all():
-              ER_bc[1][0] = ER_el[1]
+
+    ## Attention: bug solved in Cassiopee 4.0 -> lines from 1130 to 1138 must be deleted with the new release
+    #zones = Internal.getZones(t3)
+    #for zone in zones:
+    #    elts = Internal.getNodesFromType(zone,"Elements_t")
+    #    bcs = Internal.getNodesFromType(zone,"BC_t")
+    #    for n_bc,(elt,bc) in enumerate(zip(elts[1:],bcs)):
+    #      ER_el = Internal.getNodeFromName(elt,"ElementRange")
+    #      ER_bc = Internal.getNodeFromName(bc,"ElementRange")
+    #      if (ER_el[1] != ER_bc[1][0]).all():
+    #          ER_bc[1][0] = ER_el[1]
     C._deleteEmptyZones(t3)
 
     print("Converting array 2 NGon..")
@@ -1201,20 +1210,33 @@ class Converter_FSDM_CGNS:
 
     #recover BCs
     print("Recovering BCs..")
-    _recoverBCs(self.pytree,(BCs,BCNames,BCTypes))
+
+    list_BCs, list_BCNames, list_BCTypes = _recoverBCsC(self.pytree,(BCs,BCNames,BCTypes))
+    list_BCs = Cmpi.allgather(list_BCs)
+    list_BCNames = Cmpi.allgather(list_BCNames)
+    list_BCTypes = Cmpi.allgather(list_BCTypes)
+
+    for (BCs_h,BCNames_h,BCTypes_h) in zip(list_BCs,list_BCNames,list_BCTypes):
+      C._recoverBCs(self.pytree,(BCs_h,BCNames_h,BCTypes_h),tol=1e-6,removeBC=False)
+
+    n_assigned_bcs = 0
+    bcs = Internal.getNodesFromType(self.pytree,"BC_t")
+    for bc in bcs:
+        PL = Internal.getNodeFromName(bc,"PointList")[1][0]
+        n_assigned_bcs += len(PL)
+    n_assigned_bcs_total = sum(Cmpi.allgather(n_assigned_bcs))
+    n_cells_surface_total = sum(Cmpi.allgather(self.nb_cells_surface))
+    n_cells_volume_total = sum(Cmpi.allgather(self.nb_cells_volume))
+
+    if n_assigned_bcs_total != n_cells_surface_total:
+        raise ValueError("Attention! Some BCs are missing. %d/%d surface elements have no BC assigned." %((n_cells_surface_total-n_assigned_bcs_total), n_cells_surface_total))
+    else:
+     if Cmpi.rank==0:
+       print("Recovered all the BCs. %d/%d surface elements have a BC." %(n_assigned_bcs_total,n_cells_surface_total))
+
     print("Reorienting..")
     if reorient:
       XOR._reorient(self.pytree)
-    if mergeOnProc0:
-      print("Merging on proc 0..")
-      self.pytree = Cmpi.gatherZones(self.pytree,root=0)
-      self.pytree = C.newPyTree(['Base',self.pytree])
-      (BCs,BCNames,BCTypes) = C.getBCs(self.pytree)
-      self.pytree = T.merge(self.pytree)
-      C._recoverBCs(self.pytree,(BCs,BCNames,BCTypes))
-      self.pytree = C.newPyTree(['Base', self.pytree])
-    else:
-      self.pytree = C.newPyTree(['Base', self.pytree])
 
     if self.keepFlowSolution: _fixNodesForBodyForces(self.pytree)
 
@@ -1287,24 +1309,66 @@ def _fixNodesForBodyForces(t):
   return None
 
 
+def _recoverBCsC(a, T, tol=1.e-11):
+  """Recover given BCs on a tree.
+  Usage: _recoverBCs(a, (BCs, BCNames, BCTypes), tol)"""
+  try:import Post.PyTree as P
+  except: raise ImportError("_recoverBCs: requires Post module.")
+  C._deleteZoneBC__(a)
+  zones = Internal.getZones(a)
+  #print(len(zones)) #SEMPRE 1!!!
+  (BCs, BCNames, BCTypes) = T
+  for z in zones:
+    indicesF = []
+    try: f = P.exteriorFaces(z, indices=indicesF)
+    except: continue
+    indicesF = indicesF[0]
+    hook = C.createHook(f, 'elementCenters')
+    list_BCs = []
+    list_BCNames = []
+    list_BCTypes = []
+    for c in range(len(BCs)):
+      b = BCs[c]
 
-def _recoverBCs(t,T):
-    (BCs,BCNames,BCTypes) = T
-    hook = C.createHook(t, 'faceCenters')
+      if b == []:
+        raise ValueError("_recoverBCs: boundary is probably ill-defined.")
+      # Break BC connectivity si necessaire
+      elts = Internal.getElementNodes(b)
+      size = 0
+      for e in elts:
+        erange = Internal.getNodeFromName1(e, 'ElementRange')[1]
+        size += erange[1]-erange[0]+1
+      n = len(elts)
+      if n == 1:
+        ids = C.identifyElements(hook, b, tol)
+      else:
+        bb = C.breakConnectivity(b)
+        ids = numpy.array([], dtype=Internal.E_NpyInt)
+        for bc in bb:
+          ids = numpy.concatenate([ids, C.identifyElements(hook, bc, tol)])
 
-    for nobc, bc in enumerate(BCs):
+      # Cree les BCs
+      ids0 = ids # keep ids for bcdata
+      ids2 = numpy.where(ids0<0)[0]
+      ids3 = numpy.where(ids0>-1)[0]
+      ids  = ids[ids > -1]
+      sizebc = ids.size
+      if sizebc >=0 and len(ids) < len(ids0):
+            list_BCs.append(b)
+            list_BCNames.append(BCNames[c])
+            list_BCTypes.append(BCTypes[c])
+      if sizebc > 0:
+        id2 = numpy.empty(sizebc, dtype=Internal.E_NpyInt)
+        id2[:] = indicesF[ids[:]-1]
+        C._addBC2Zone(z, BCNames[c], BCTypes[c], faceList=id2)
 
-      ids = C.identifyElements(hook, bc, tol=1e-6)
-      ids = ids[ids[:] > -1]
-      ids = ids.tolist()
-
-      if len(ids)>0:
-        C._addBC2Zone(t, BCNames[nobc], BCTypes[nobc], faceList=ids)
         # Recupere BCDataSets
-        fsc = Internal.getNodeFromName(bc, Internal.__FlowSolutionCenters__)
+        fsc = Internal.getNodeFromName(b, Internal.__FlowSolutionCenters__)
+
         if fsc is not None:
-          newNameOfBC = C.getLastBCName(BCNames[nobc])
-          bcz = Internal.getNodeFromNameAndType(t, newNameOfBC, 'BC_t')
+          newNameOfBC = C.getLastBCName(BCNames[c])
+          bcz = Internal.getNodeFromNameAndType(z, newNameOfBC, 'BC_t')
+
           ds = Internal.newBCDataSet(name='BCDataSet', value='UserDefined',
                                    gridLocation='FaceCenter', parent=bcz)
           d = Internal.newBCData('NeumannData', parent=ds)
@@ -1316,9 +1380,13 @@ def _recoverBCs(t,T):
                 val0 = numpy.reshape(val0, val0.size, order='F')
               else:
                 val0 = numpy.reshape([val0], 1, order='F')
-              Internal._createUniqueChild(d, node[0], 'DataArray_t', value=val0)
+
+              val1 = val0[ids0>-1]
+              Internal._createUniqueChild(d, node[0], 'DataArray_t', value=val1)
+
     C.freeHook(hook)
-    return None
+
+  return list_BCs, list_BCNames, list_BCTypes
 
 def create_Quad2Quad(coordinates, nonconformal_faces, nonconformal_faces_ctr,plane="xy",tol=1e-6):
 
