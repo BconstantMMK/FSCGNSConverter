@@ -1238,6 +1238,64 @@ class Converter_FSDM_CGNS:
     if reorient:
       XOR._reorient(self.pytree)
 
+    if mergeOnProc0:
+      print("Merging on proc 0..")
+      self.pytree = Cmpi.gatherZones(self.pytree,root=0)
+      self.pytree = C.newPyTree(['Base',self.pytree])
+      self.pytree = T.merge(self.pytree)
+      BCs_gathered = Cmpi.gather(BCs,root=0)
+      BCNames_gathered = Cmpi.gather(BCNames,root=0)
+      BCTypes_gathered = Cmpi.gather(BCTypes,root=0)
+
+      if Cmpi.rank == 0:
+        for (BCs,BCNames,BCTypes) in zip( BCs_gathered,BCNames_gathered,BCTypes_gathered):
+          C._recoverBCs(self.pytree,(BCs,BCNames,BCTypes),removeBC=False)
+        BCnodes = Internal.getNodesFromType(self.pytree,"BC_t")
+        Internal._rmNodesFromType(self.pytree,"ZoneBC_t")
+        dictBCs = {}
+        dictBCsTypes = {}
+        for bcnode in BCnodes:
+            bcname = bcnode[0]
+            bctype = Internal.getValue(bcnode)
+            name_2 = bcname.split(".")[0]+"."+bcname.split(".")[1]
+            if not name_2 in dictBCs.keys():
+              dictBCs[name_2] = [bcnode]
+              dictBCsTypes[name_2] = bctype
+            else:
+              dictBCs[name_2].append(bcnode)
+        for key in dictBCs.keys():
+          PLs = Internal.getNodesFromName(dictBCs[key],"PointList")
+          new_PL = numpy.empty(0,dtype=int)
+          for PL in PLs:
+              new_PL = numpy.concatenate([new_PL,PL[1][0]])
+          #C._addBC2Zone(self.pytree,key,"FamilySpecified:"+key,faceList=new_PL)
+          C._addBC2Zone(self.pytree,key,dictBCsTypes[key],faceList=new_PL)
+          dictFS = {}
+          fscs = Internal.getNodesFromType(dictBCs[key], "BCDataSet_t")
+
+          if fscs != []:
+            for fsc in fscs:
+              fsc_arrays = Internal.getNodesFromType(fsc,"DataArray_t")
+              for fsc_array in fsc_arrays:
+                if not fsc_array[0] in dictFS.keys():
+                  dictFS[fsc_array[0]] = fsc_array[1]
+                else:
+                  dictFS[fsc_array[0]] = numpy.concatenate([dictFS[fsc_array[0]],fsc_array[1]])
+
+            newNameOfBC = C.getLastBCName(key)
+            bcz = Internal.getNodeFromName(self.pytree, newNameOfBC)
+            ds = Internal.newBCDataSet(name='BCDataSet', value='UserDefined',
+                                   gridLocation='FaceCenter', parent=bcz)
+            d = Internal.newBCData('NeumannData', parent=ds)
+            for key_FS in dictFS.keys():
+              Internal._createUniqueChild(d, key_FS, "DataArray_t",value=dictFS[key_FS])
+      else:
+          self.pytree = Internal.newZone(name = "empty",zsize=[[0,0]],ztype="Unstructured")
+
+      self.pytree = C.newPyTree(['Base', self.pytree])
+    else:
+      self.pytree = C.newPyTree(['Base', self.pytree])
+
     if self.keepFlowSolution: _fixNodesForBodyForces(self.pytree)
 
     return None
@@ -1293,18 +1351,19 @@ def checkTree(t1, t2):
 def _fixNodesForBodyForces(t):
 
   FS_C = Internal.getNodeFromName(t,"FlowSolution#Centers")
-  BodyForceDatasets = []
-  for node in FS_C[2][1:]:
-    if node[0].split(".")[0] == "SourceTerm":
-      BodyForceDatasets.append(node[0])
+  if FS_C != None:
+    BodyForceDatasets = []
+    for node in FS_C[2][1:]:
+      if node[0].split(".")[0] == "SourceTerm":
+        BodyForceDatasets.append(node[0])
 
-  if BodyForceDatasets != []:
-    zone = Internal.getZones(t)[0]
-    FS_ST = Internal.newFlowSolution(name='FlowSolution#SourceTerm', gridLocation='CellCenter', parent=zone)
-    for bfname in BodyForceDatasets:
-      nodeBF = Internal.getNodeFromName(FS_C,bfname)
-      Internal.newDataArray(bfname.split(".")[1], value = nodeBF[1], parent = FS_ST)
-      Internal._rmNodesByName(FS_C,bfname)
+    if BodyForceDatasets != []:
+      zone = Internal.getZones(t)[0]
+      FS_ST = Internal.newFlowSolution(name='FlowSolution#SourceTerm', gridLocation='CellCenter', parent=zone)
+      for bfname in BodyForceDatasets:
+        nodeBF = Internal.getNodeFromName(FS_C,bfname)
+        Internal.newDataArray(bfname.split(".")[1], value = nodeBF[1], parent = FS_ST)
+        Internal._rmNodesByName(FS_C,bfname)
 
   return None
 
