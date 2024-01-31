@@ -390,6 +390,9 @@ class Converter_FSDM_CGNS:
   def initializeFSDMCoordinates(self):
     #Init mesh number of node
 
+    if self.fsmesh==None:
+      self.fsmesh = FSMesh(self.clac)
+
     self.fsmesh.BeginInitialization()
 
     self.fsmesh.InitUnstructNodes(self.nb_vertices)
@@ -490,11 +493,10 @@ class Converter_FSDM_CGNS:
       #Get list of points on the BC : based on name to make the difference between point list and point range ;
       if (Internal.getNodeFromType(bc_node, "IndexArray_t")!=None):
         pointlist_node = Internal.getNodeFromType(bc_node, "IndexArray_t")
+        point_list = numpy.ravel(pointlist_node[1]) - 1
+
       elif (Internal.getNodeFromType(bc_node, "IndexRange_t")!=None):
         pointlist_node = Internal.getNodeFromType(bc_node, "IndexRange_t")
-      if pointlist_node[0] == "PointList" or pointlist_node[0]=="ElementList":
-        point_list = numpy.ravel(pointlist_node[1]) - 1
-      elif pointlist_node[0] == "PointRange" or  pointlist_node[0] == "ElementRange":
         if len(pointlist_node[1])==1:
           point_list = numpy.arange(pointlist_node[1][0][0]-1, pointlist_node[1][0][1])
         elif len(pointlist_node[1])==2:
