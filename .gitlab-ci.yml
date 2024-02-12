@@ -1,0 +1,73 @@
+image: as-01gitlab01l.as.bs.dlr.de:5550/sp/flowsim-registry/fsdm:develop-ubuntu20.04
+
+default:
+  before_script:
+    - source /etc/profile.d/setup-spack-env.sh
+    - spack install cassiopee
+    - spack load fsdm cassiopee
+    - export FLOWSIM_PATH=${PWD}/FLOWSIM_PATH
+    # depending on the image, the shared libraries are in lib or lib64, so we add both
+    - export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${FLOWSIM_PATH}/lib:${FLOWSIM_PATH}/lib64
+    - export PYTHON_VERSION=python`python -c 'import sys; print(".".join(map(str, sys.version_info[:2])))'`
+    - export PYTHONPATH=${PYTHONPATH}:${FLOWSIM_PATH}/lib/${PYTHON_VERSION}/site-packages
+
+stages:
+#  - style
+  - configure
+  - build
+  - install
+  - test
+
+configure:
+  stage: configure
+  script:
+#    - cat config/linux-x86_64.ini
+    - echo ${FLOWSIM_PATH}
+    - which python
+    - python3 --version
+    - which g++
+    - g++ --version
+    - ./waf configure --disable-fsconfig --prefix=${FLOWSIM_PATH}
+  artifacts:
+    when: always
+    paths:
+      - build
+      - .lock-waf_linux_build
+    expire_in: 14 days
+
+build:
+  stage: build
+  needs:
+    - configure
+  script:
+    - ./waf build
+  artifacts:
+    paths:
+      - build
+      - .lock-waf_linux_build
+    expire_in: 1 day
+
+install:
+  stage: install
+  needs:
+    - build
+  script:
+    - ./waf install
+  artifacts:
+    paths:
+      - config/linux-x86_64.ini
+      - FLOWSIM_PATH
+    expire_in: 1 day
+
+python-tests:
+  stage: test
+  needs:
+    - install
+  script:
+   - cd examples
+#   - python howToUseFSMeshPyTreeConversionFSMeshImport.py # has to be fixed for CI pipeline
+  artifacts:
+    when: always
+    paths:
+
+    reports:
