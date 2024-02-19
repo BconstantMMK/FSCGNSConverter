@@ -31,7 +31,7 @@ hj = 1.0
 hk = 1.0
 
 # number of nodes in each direction (not cells)
-ni = 5  
+ni = 5
 nj = 6
 nk = 2
 
@@ -44,14 +44,20 @@ t = C.addBC2Zone(t, 'wall4', 'BCWall', 'jmax')
 t = C.addBC2Zone(t, 'wall5', 'BCWall', 'kmin')
 t = C.addBC2Zone(t, 'wall6', 'BCWall', 'kmax')
 
+# initialize arbitrary data that can be checked in future
+def F(x, y):
+    return x * y
+t = C.initVars(t, 'DataValues', F, ['CoordinateX','CoordinateY'])
+t = C.initVars(t, 'centers:DataValues', F, ['centers:CoordinateX','centers:CoordinateY'])
+
 C.convertPyTree2File(t, 'mesh.cgns')
 
-print("------ Conversion CGNS -> FSDM -------")
+FSLog(clac, 0, "------ Conversion CGNS -> FSDM -------")
 
-cgns2fsdm = Converter_FSDM_CGNS("mesh.cgns")
+cgns2fsdm = Converter_FSDM_CGNS("mesh.cgns", keepFlowSolution=True)
 cgns2fsdm.convertCGNS2FSDM()
 
-print("------ Conversion done -------")
+FSLog(clac, 0, "------ Conversion done -------")
 
 fsmeshConv = FSMesh(clac)
 fsmeshConv.ImportMeshHDF5(Filename="mesh.h5") or FSError.PrintAndExit()

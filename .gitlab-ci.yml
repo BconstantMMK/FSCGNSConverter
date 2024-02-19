@@ -3,13 +3,12 @@ image: as-01gitlab01l.as.bs.dlr.de:5550/sp/flowsim-registry/fsdm:develop-ubuntu2
 default:
   before_script:
     - source /etc/profile.d/setup-spack-env.sh
-    - spack install cassiopee
-    - spack load fsdm cassiopee
-    - export FLOWSIM_PATH=${PWD}/FLOWSIM_PATH
+    - spack load fsdm
+    - export INSTALL_PATH=${CI_PROJECT_DIR}/install_dir
     # depending on the image, the shared libraries are in lib or lib64, so we add both
     - export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${FLOWSIM_PATH}/lib:${FLOWSIM_PATH}/lib64
     - export PYTHON_VERSION=python`python -c 'import sys; print(".".join(map(str, sys.version_info[:2])))'`
-    - export PYTHONPATH=${PYTHONPATH}:${FLOWSIM_PATH}/lib/${PYTHON_VERSION}/site-packages
+    - export PYTHONPATH=${PYTHONPATH}:${FLOWSIM_PATH}/lib/${PYTHON_VERSION}/site-packages:${INSTALL_PATH}/lib/${PYTHON_VERSION}/site-packages
 
 stages:
 #  - style
@@ -21,13 +20,15 @@ stages:
 configure:
   stage: configure
   script:
-#    - cat config/linux-x86_64.ini
-    - echo ${FLOWSIM_PATH}
+    - echo ${INSTALL_PATH}
+    - ls /builds/shared-fs-plugins
+    - spack install cassiopee
+    - spack load cassiopee
     - which python
     - python3 --version
     - which g++
     - g++ --version
-    - ./waf configure --disable-fsconfig --prefix=${FLOWSIM_PATH}
+    - ./waf configure --disable-fsconfig --prefix=${INSTALL_PATH}
   artifacts:
     when: always
     paths:
@@ -56,7 +57,7 @@ install:
   artifacts:
     paths:
       - config/linux-x86_64.ini
-      - FLOWSIM_PATH
+      - install_dir
     expire_in: 1 day
 
 python-tests:
@@ -64,8 +65,11 @@ python-tests:
   needs:
     - install
   script:
-   - cd examples
-#   - python howToUseFSMeshPyTreeConversionFSMeshImport.py # has to be fixed for CI pipeline
+    - spack install cassiopee
+    - spack load cassiopee
+    - cd examples
+    - python howToUseFSMeshPyTreeConversionFSMeshImport.py
+    # - mpirun -np 4 python howToUseFSMeshPyTreeConversionFSDM2CGNSNGON.py # Apparently this test does not work with Cassiopée 3.5
   artifacts:
     when: always
     paths:
