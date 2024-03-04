@@ -174,7 +174,7 @@ class Converter_FSDM_CGNS:
 
   def prepareDatasetOfNonConformalFaces(self):
     bc_names = [bc[0] for bc in Internal.getNodesFromType(self.pytree,'BC_t')]
-    rm = Internal.getNodeFromName(self.pytree,'UserDefined')
+    rm = Internal.getNodeFromName(self.pytree,'QuadNQuad')
     old_name_hf = rm[0]
     rm[0] = "NonConformalFaces"
     Internal._renameNode(self.pytree,old_name_hf,"NonConformalFaces")
@@ -445,16 +445,34 @@ class Converter_FSDM_CGNS:
 
   def initIBMDatasets(self):
     #Flis wall distance initialization
-    flis_distance = Internal.getNodeFromName(self.pytree,"FlisWallDistance")[2][1][1]
-    quantity_name = "FlisWallDistance"
-    quantityNames = FSStringArray(1)
-    quantityNames[0] = quantity_name
-    quantitySpecs = FSDataSpecArray(1)
-    self.fsmesh.InitUnstructDataset(quantity_name, FSDatasetInfo(quantityNames, quantitySpecs, FSMeshEnums.CT_Hexa8))
-    Var = self.fsmesh.GetUnstructDataset(quantity_name).GetValues()
-    for elemIndex in range(self.nb_cells_volume):
-            VarIndex =    Var.MapIndex(elemIndex, 0)
-            Var[VarIndex] = flis_distance[elemIndex]
+    spatial_discretization = self.IBM_parameters["spatial discretization"]["type"]
+    if spatial_discretization == "FV":
+      N_IP_per_element = 1
+    else:
+      degree = self.IBM_parameters["spatial discretization"]["degree"]
+      if spatial_discretization == "DG":
+        integrationDegree = 2*degree+1
+        quadratureType = "GaussLegendre"
+      elif spatial_discretization == "DGSEM":
+        integrationDegree = 2*degree-1
+        quadratureType = "GaussLobatto"
+      N_IP_per_element = Q.GetReferencePointsHexa(integrationDegree, quadratureType)[0]
+
+    list_suffix_datasets = [""]
+    list_suffix_datasets.extend(range(1, N_IP_per_element))
+
+    for i in range(N_IP_per_element):
+      flis_node = Internal.getNodeFromName(self.pytree,"FlisWallDistance"+str(list_suffix_datasets[i]))
+      flis_distance = Internal.getNodeFromName(flis_node,"TurbulentDistance")[1]
+      quantity_name = "FlisWallDistance"+str(list_suffix_datasets[i])
+      quantityNames = FSStringArray(1)
+      quantityNames[0] = quantity_name
+      quantitySpecs = FSDataSpecArray(1)
+      self.fsmesh.InitUnstructDataset(quantity_name, FSDatasetInfo(quantityNames, quantitySpecs, FSMeshEnums.CT_Hexa8))
+      Var = self.fsmesh.GetUnstructDataset(quantity_name).GetValues()
+      for elemIndex in range(self.nb_cells_volume):
+              VarIndex =    Var.MapIndex(elemIndex, 0)
+              Var[VarIndex] = flis_distance[elemIndex]
 
     return
 
@@ -469,9 +487,9 @@ class Converter_FSDM_CGNS:
     self.dict_bc_elts["QUAD"] = []
 
     if self.IBM:
-      IBM_BC_coords_x = []
-      IBM_BC_coords_y = []
-      IBM_BC_coords_z = []
+      IBM_BC_coords_x = {}
+      IBM_BC_coords_y = {}
+      IBM_BC_coords_z = {}
       IBM_BC_names = []
       if self.IBM_parameters["IBM type"]["type"]=="local":
         wall_boundary_markers = self.IBM_parameters["IBM type"]["wall boundary markers"]
@@ -518,17 +536,21 @@ class Converter_FSDM_CGNS:
         bc_data_nodes = Internal.getNodesFromType(bc_dataset_node, "BCData_t")
         for data_node in bc_data_nodes :
           fs_bc_dataset_name = data_node[0]
-          if self.IBM and bc_name == "IBMWall":
+          if self.IBM and bc_name.startswith("IBMWall"):
+            if bc_name not in IBM_BC_coords_x.keys():
+              IBM_BC_coords_x[bc_name] = []
+              IBM_BC_coords_y[bc_name] = []
+              IBM_BC_coords_z[bc_name] = []
             IBM_BC_names.append(fs_bc_dataset_name)
             if self.invertPlanesYZ==False:
-              IBM_BC_coords_x.append(data_node[2][0][1])
-              IBM_BC_coords_y.append(data_node[2][1][1])
-              IBM_BC_coords_z.append(data_node[2][2][1])
+              IBM_BC_coords_x[bc_name].append(data_node[2][0][1])
+              IBM_BC_coords_y[bc_name].append(data_node[2][1][1])
+              IBM_BC_coords_z[bc_name].append(data_node[2][2][1])
             elif self.invertPlanesYZ==True:
-              IBM_BC_coords_x.append(data_node[2][0][1])
-              IBM_BC_coords_y.append(data_node[2][2][1])
-              IBM_BC_coords_z.append(-data_node[2][1][1])
-          elif self.IBM and bc_boundary_marker in wall_boundary_markers:
+              IBM_BC_coords_x[bc_name].append(data_node[2][0][1])
+              IBM_BC_coords_y[bc_name].append(data_node[2][2][1])
+              IBM_BC_coords_z[bc_name].append(-data_node[2][1][1])
+          elif self.IBM and self.IBM_parameters["IBM type"]["type"] == "local" and bc_boundary_marker in wall_boundary_markers:
             BC_wall_names.append(fs_bc_dataset_name)
             if self.invertPlanesYZ==False:
               BC_wall_coords_x.append(data_node[2][0][1])
@@ -562,12 +584,29 @@ class Converter_FSDM_CGNS:
 
       self.fsmesh.InitCellAttribute(FS_AT_CADGroupID, cell_type, fs_marker_array_cell_type)
     #Then we attach our boundary marker to their name in the fsmesh
+    if self.IBM ==True:
+        IBM_boundary_markers = []
+        IBM_names = []
     for marker in self.boundary_marker_to_bc_name.keys() :
       self.fsmesh.SetCellAttributeValueName(FS_AT_CADGroupID, marker, self.boundary_marker_to_bc_name[marker])
-    if self.IBM == True:
-      IBM_boundary_marker = marker
+      if self.IBM == True and self.boundary_marker_to_bc_name[marker].startswith("IBMWall"):
+        IBM_boundary_markers.append(marker)
+        IBM_names.append(self.boundary_marker_to_bc_name[marker])
 
-      self.createDatasetOfCoordinatesBC(self.fsmesh,IBMDatasets[1], IBMDatasets[2], IBMDatasets[3] ,IBMDatasets[0],self.nb_cells_surface,self.boundary_marker_to_point_list[IBM_boundary_marker]-self.nb_cells_volume)
+
+    if self.IBM:
+      IBMDataset1 = numpy.empty((len(IBMDatasets[1][IBM_names[0]]),0))
+      IBMDataset2 = numpy.empty((len(IBMDatasets[1][IBM_names[0]]),0))
+      IBMDataset3 = numpy.empty((len(IBMDatasets[1][IBM_names[0]]),0))
+      pointlistIBC = numpy.empty(0,dtype=int)
+      for IBM_boundary_marker,IBM_name in zip(IBM_boundary_markers,IBM_names):
+        IBMDataset1 = numpy.concatenate([IBMDataset1, numpy.array(IBMDatasets[1][IBM_name])],axis=1)
+        IBMDataset2 = numpy.concatenate([IBMDataset2, numpy.array(IBMDatasets[2][IBM_name])],axis=1)
+        IBMDataset3 = numpy.concatenate([IBMDataset3, numpy.array(IBMDatasets[3][IBM_name])],axis=1)
+        pointlistIBC = numpy.concatenate([pointlistIBC, self.boundary_marker_to_point_list[IBM_boundary_marker]-self.nb_cells_volume])
+
+      self.createDatasetOfCoordinatesBC(self.fsmesh,IBMDataset1, IBMDataset2, IBMDataset3,IBMDatasets[0],self.nb_cells_surface,pointlistIBC)
+
       if self.IBM_parameters["IBM type"]["type"]=="local":
         wall_boundary_markers = self.IBM_parameters["IBM type"]["wall boundary markers"]
         self.createDatasetOfCoordinatesBC(self.fsmesh,IBMDatasets[5], IBMDatasets[6], IBMDatasets[7],IBMDatasets[4],self.nb_cells_surface,self.boundary_marker_to_point_list[wall_boundary_markers[0]]-self.nb_cells_volume)
@@ -576,7 +615,7 @@ class Converter_FSDM_CGNS:
 
   def createDatasetOfCoordinatesBC(self,fsmesh,coords_x, coords_y, coords_z,BC_names,nb_cell_surf,point_list):
 
-    for i in range(len(coords_x)):
+    for i in range(coords_x.shape[0]):
 
        coord_x = coords_x[i]
        coord_y = coords_y[i]
