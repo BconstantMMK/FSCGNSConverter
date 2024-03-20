@@ -12,8 +12,12 @@ import FSDM
 from FSDataManager import FSClac, FSMesh, FSError, FSFloatArray, FSIntArray, FSStringArray, FSDataName, FSDataSpecArray, FSDatasetInfo, FSMeshEnums, FSUnstructVolumeCellTypes, FSUnstructSurfaceCellTypes, FS_AT_CADGroupID
 
 import numpy
-from FSDMPyUtils import ArrayOps
 from functools import cmp_to_key
+
+try:
+  from FSDMPyUtils import ArrayOps
+except:
+  print("No FSDMPyUtils found. Continuing..")
 
 import os, sys,time
 
@@ -1632,16 +1636,16 @@ class Converter_FSDM_CGNS:
     print("Breaking connectivity..")
     t3 = C.breakConnectivity(self.pytree)
 
-    ## Attention: bug solved in Cassiopee 4.0 -> lines from 1130 to 1138 must be deleted with the new release
-    #zones = Internal.getZones(t3)
-    #for zone in zones:
-    #    elts = Internal.getNodesFromType(zone,"Elements_t")
-    #    bcs = Internal.getNodesFromType(zone,"BC_t")
-    #    for n_bc,(elt,bc) in enumerate(zip(elts[1:],bcs)):
-    #      ER_el = Internal.getNodeFromName(elt,"ElementRange")
-    #      ER_bc = Internal.getNodeFromName(bc,"ElementRange")
-    #      if (ER_el[1] != ER_bc[1][0]).all():
-    #          ER_bc[1][0] = ER_el[1]
+    # Attention: bug solved in Cassiopee 4.0 -> lines from 1130 to 1138 must be deleted with the new release
+    zones = Internal.getZones(t3)
+    for zone in zones:
+        elts = Internal.getNodesFromType(zone,"Elements_t")
+        bcs = Internal.getNodesFromType(zone,"BC_t")
+        for n_bc,(elt,bc) in enumerate(zip(elts[1:],bcs)):
+          ER_el = Internal.getNodeFromName(elt,"ElementRange")
+          ER_bc = Internal.getNodeFromName(bc,"ElementRange")
+          if (ER_el[1] != ER_bc[1][0]).all():
+              ER_bc[1][0] = ER_el[1]
     C._deleteEmptyZones(t3)
 
     print("Converting array 2 NGon..")
