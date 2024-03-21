@@ -531,6 +531,7 @@ class Converter_FSDM_CGNS:
       elif spatial_discretization == "DGSEM":
         integrationDegree = 2*degree-1
         quadratureType = "GaussLobatto"
+      import QuadratureDG as Q
       N_IP_per_element = Q.GetReferencePointsHexa(integrationDegree, quadratureType)[0]
 
     list_suffix_datasets = [""]
