@@ -1593,7 +1593,7 @@ class Converter_FSDM_CGNS:
       if myID==0:
         for (name,marker) in zip(names,fs_boundary_marker_list):
           self.fsmesh.SetCellAttributeValueName(FS_AT_CADGroupID, marker, name)
-      self.fsmesh.InitCellAttribute(FS_AT_CADGroupID, 4, fs_markers_array_cell_type)
+        self.fsmesh.InitCellAttribute(FS_AT_CADGroupID, 4, fs_markers_array_cell_type)
 
       if self.IBM:
           if myID==0:
