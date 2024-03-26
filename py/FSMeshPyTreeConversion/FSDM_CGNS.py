@@ -248,22 +248,25 @@ class Converter_FSDM_CGNS:
     _,idx = numpy.unique(octree_faces_EC_global,return_index=True)
     octree_faces_idx_nodes = octree_faces_EC_global[numpy.sort(idx)] - 1 #indices loc2glob
     len_nodes_NCF = len(octree_faces_idx_nodes)
-    xCoord_nodes_NCF = xCoord[octree_faces_idx_nodes]
-    yCoord_nodes_NCF = yCoord[octree_faces_idx_nodes]
-    zCoord_nodes_NCF = zCoord[octree_faces_idx_nodes]
+    if len_nodes_NCF>0:
+      xCoord_nodes_NCF = xCoord[octree_faces_idx_nodes]
+      yCoord_nodes_NCF = yCoord[octree_faces_idx_nodes]
+      zCoord_nodes_NCF = zCoord[octree_faces_idx_nodes]
 
-    nonconformal_faces_global = numpy.reshape(octree_faces_EC_global-1,(len_NCF,4))
-    indices1 = numpy.linspace(0,len_nodes_NCF-1,len_nodes_NCF,dtype=int)
-    glob2loc = numpy.zeros(self.nb_vertices,dtype=int)
-    glob2loc[octree_faces_idx_nodes] = indices1
-    nonconformal_faces_local = glob2loc[nonconformal_faces_global]
+      nonconformal_faces_global = numpy.reshape(octree_faces_EC_global-1,(len_NCF,4))
+      indices1 = numpy.linspace(0,len_nodes_NCF-1,len_nodes_NCF,dtype=int)
+      glob2loc = numpy.zeros(self.nb_vertices,dtype=int)
+      glob2loc[octree_faces_idx_nodes] = indices1
+      nonconformal_faces_local = glob2loc[nonconformal_faces_global]
 
-    z_octree_faces = Internal.newZone(name = "NonConformalFaces",zsize=[[len(xCoord_nodes_NCF),len(octree_faces_idx_nodes)]],ztype="Unstructured")
-    gc = Internal.newGridCoordinates(parent = z_octree_faces)
-    Internal.newDataArray('CoordinateX', value = xCoord_nodes_NCF, parent = gc)
-    Internal.newDataArray('CoordinateY', value = yCoord_nodes_NCF, parent = gc)
-    Internal.newDataArray('CoordinateZ', value = zCoord_nodes_NCF, parent = gc)
-    Internal.newElements(name = "NonconformalFaces", etype = 7, econnectivity = numpy.ravel(nonconformal_faces_local+1), erange = [1, len_NCF], eboundary = 0, parent = z_octree_faces)
+      z_octree_faces = Internal.newZone(name = "NonConformalFaces",zsize=[[len(xCoord_nodes_NCF),len(octree_faces_idx_nodes)]],ztype="Unstructured")
+      gc = Internal.newGridCoordinates(parent = z_octree_faces)
+      Internal.newDataArray('CoordinateX', value = xCoord_nodes_NCF, parent = gc)
+      Internal.newDataArray('CoordinateY', value = yCoord_nodes_NCF, parent = gc)
+      Internal.newDataArray('CoordinateZ', value = zCoord_nodes_NCF, parent = gc)
+      Internal.newElements(name = "NonconformalFaces", etype = 7, econnectivity = numpy.ravel(nonconformal_faces_local+1), erange = [1, len_NCF], eboundary = 0, parent = z_octree_faces)
+    else:
+      z_octree_faces = None #Internal.newZone(name = "NonConformalFaces",zsize=[[0,0]],ztype="Unstructured")
     return z_octree_faces
 
   def modifyConnectivityUnstructured(self):
@@ -1248,11 +1251,15 @@ class Converter_FSDM_CGNS:
   def initializePseudoCell_QuadNQuad_MPI(self,z_NCfaces):
 
     myID = self.clac.ProcID()
-    z_NCfaces[0] = z_NCfaces[0]+str(Cmpi.rank)
-
-    nonconformal_faces_nodes_x = Internal.getNodeFromName(z_NCfaces,"CoordinateX")[1]
-    nonconformal_faces_nodes_y = Internal.getNodeFromName(z_NCfaces,"CoordinateY")[1]
-    nonconformal_faces_nodes_z = Internal.getNodeFromName(z_NCfaces,"CoordinateZ")[1]
+    if z_NCfaces != None:
+      z_NCfaces[0] = z_NCfaces[0]+str(Cmpi.rank)
+      nonconformal_faces_nodes_x = Internal.getNodeFromName(z_NCfaces,"CoordinateX")[1]
+      nonconformal_faces_nodes_y = Internal.getNodeFromName(z_NCfaces,"CoordinateY")[1]
+      nonconformal_faces_nodes_z = Internal.getNodeFromName(z_NCfaces,"CoordinateZ")[1]
+    else:
+      nonconformal_faces_nodes_x = numpy.empty(0)
+      nonconformal_faces_nodes_y = numpy.empty(0)
+      nonconformal_faces_nodes_z = numpy.empty(0)
 
 
     allgathered_x = Cmpi.gather(nonconformal_faces_nodes_x,0)
@@ -1261,13 +1268,14 @@ class Converter_FSDM_CGNS:
 
 
     len_NCF = len(nonconformal_faces_nodes_x)
+
     del nonconformal_faces_nodes_x; del nonconformal_faces_nodes_y; del nonconformal_faces_nodes_z
 
-    if self.MPI==True:
-      self.initializeCell2Proc("bu",len_NCF)
+    self.initializeCell2Proc("bu",len_NCF)
+    if z_NCfaces != None:
       nonconformal_faces_local = Internal.getNodeFromName(z_NCfaces,"ElementConnectivity")[1]-1 + self.cell2Proc["bu"][myID]
     else:
-      nonconformal_faces_local = Internal.getNodeFromName(z_NCfaces,"ElementConnectivity")[1]-1
+      nonconformal_faces_local = numpy.empty(0,dtype=numpy.int64)
 
     allgathered_nonconformal_faces_local = Cmpi.gather(nonconformal_faces_local,0)
     del nonconformal_faces_local;
@@ -1355,8 +1363,11 @@ class Converter_FSDM_CGNS:
     print("before initializecell2proc")
     if self.MPI==True: self.initializeCell2Proc(fs_cell_type,i)
     print("before hook")
-    hook = C.createHook(self.pytree, 'nodes')
-    ids = C.identifyNodes(hook, z_NCfaces)
+    if z_NCfaces!=None:
+      hook = C.createHook(self.pytree, 'nodes')
+      ids = C.identifyNodes(hook, z_NCfaces)
+    else:
+      ids = numpy.empty(0,dtype=numpy.int64)
     if self.MPI==True:
       ids = ids[ids>-1]-1 + self.cell2Proc[1][myID]
       ids_gathered = numpy.concatenate(Cmpi.allgather(ids))
@@ -1582,7 +1593,6 @@ class Converter_FSDM_CGNS:
       if myID==0:
         for (name,marker) in zip(names,fs_boundary_marker_list):
           self.fsmesh.SetCellAttributeValueName(FS_AT_CADGroupID, marker, name)
-
       self.fsmesh.InitCellAttribute(FS_AT_CADGroupID, 4, fs_markers_array_cell_type)
 
       if self.IBM:
