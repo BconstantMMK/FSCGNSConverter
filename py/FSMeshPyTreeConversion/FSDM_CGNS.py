@@ -1634,7 +1634,7 @@ class Converter_FSDM_CGNS:
     del self.coordinatesX, self.coordinatesY, self.coordinatesZ, self.numpy_cell2node, self.numpy_cell2node_volume, self.numpy_cell2node_surface, self.numpy_range, self.indices_per_boundary
     del self.fsmesh, self.list_names_BCs,  self.fs_markers, self.boundary_marker_to_bc_name, self.boundary_marker_to_point_list, self.dict_bcs
 
-  def convertMonozoneME2Ngon4FFD(self,reorient=True,mergeOnProc0=False):
+  def convertMonozoneME2Ngon4FFD(self,reorient=True,mergeOnProc0=False,tol=1e-6):
 
     if Internal.getZones(self.pytree) == []:
       if Cmpi.size==1:
@@ -1697,13 +1697,13 @@ class Converter_FSDM_CGNS:
     #recover BCs
     print("Recovering BCs..")
 
-    list_BCs, list_BCNames, list_BCTypes = _recoverBCsC(self.pytree,(BCs,BCNames,BCTypes))
+    list_BCs, list_BCNames, list_BCTypes = _recoverBCsC(self.pytree,(BCs,BCNames,BCTypes),tol=tol)
     list_BCs = Cmpi.allgather(list_BCs)
     list_BCNames = Cmpi.allgather(list_BCNames)
     list_BCTypes = Cmpi.allgather(list_BCTypes)
 
     for (BCs_h,BCNames_h,BCTypes_h) in zip(list_BCs,list_BCNames,list_BCTypes):
-      C._recoverBCs(self.pytree,(BCs_h,BCNames_h,BCTypes_h),tol=1e-6,removeBC=False)
+      C._recoverBCs(self.pytree,(BCs_h,BCNames_h,BCTypes_h),tol=tol,removeBC=False)
 
     n_assigned_bcs = 0
     bcs = Internal.getNodesFromType(self.pytree,"BC_t")
