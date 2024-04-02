@@ -1236,7 +1236,7 @@ class Converter_FSDM_CGNS:
     elif self.dimPb == 3: listQuadNQuad_local, rest_faces = create_Quad4Quad(nonconformal_faces_nodes,nonconformal_faces_local,nonconformal_faces_ctr)#plane,tol
     toc = time.perf_counter()
     print("time for hanging nodes search: ", toc-tic)
-
+    Internal._rmNodesFromType(self.pytree,"Elements_t")
     hook = C.createHook(self.pytree, 'nodes')
     ids = C.identifyNodes(hook, z_NCfaces)
     ids = ids[ids!=-1]-1
@@ -1363,6 +1363,7 @@ class Converter_FSDM_CGNS:
     print("before initializecell2proc")
     if self.MPI==True: self.initializeCell2Proc(fs_cell_type,i)
     print("before hook")
+    Internal._rmNodesFromType(self.pytree,"Elements_t")
     if z_NCfaces!=None:
       hook = C.createHook(self.pytree, 'nodes')
       ids = C.identifyNodes(hook, z_NCfaces)
