@@ -1696,14 +1696,20 @@ class Converter_FSDM_CGNS:
 
     #recover BCs
     print("Recovering BCs..")
-
-    list_BCs, list_BCNames, list_BCTypes = _recoverBCsC(self.pytree,(BCs,BCNames,BCTypes),tol=tol)
-    list_BCs = Cmpi.allgather(list_BCs)
-    list_BCNames = Cmpi.allgather(list_BCNames)
-    list_BCTypes = Cmpi.allgather(list_BCTypes)
+    if Cmpi.size > 1:
+      list_BCs, list_BCNames, list_BCTypes = _recoverBCsC(self.pytree,(BCs,BCNames,BCTypes))
+      list_BCs = Cmpi.allgather(list_BCs)
+      list_BCNames = Cmpi.allgather(list_BCNames)
+      list_BCTypes = Cmpi.allgather(list_BCTypes)
+      removeBC = False
+    else:
+      list_BCs = [BCs]
+      list_BCNames = [BCNames]
+      list_BCTypes = [BCTypes]
+      removeBC = True
 
     for (BCs_h,BCNames_h,BCTypes_h) in zip(list_BCs,list_BCNames,list_BCTypes):
-      C._recoverBCs(self.pytree,(BCs_h,BCNames_h,BCTypes_h),tol=tol,removeBC=False)
+      C._recoverBCs(self.pytree,(BCs_h,BCNames_h,BCTypes_h),tol=tol,removeBC=removeBC)
 
     n_assigned_bcs = 0
     bcs = Internal.getNodesFromType(self.pytree,"BC_t")
