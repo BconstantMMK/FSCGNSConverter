@@ -1709,7 +1709,7 @@ class Converter_FSDM_CGNS:
       removeBC = True
 
     for (BCs_h,BCNames_h,BCTypes_h) in zip(list_BCs,list_BCNames,list_BCTypes):
-      C._recoverBCs(self.pytree,(BCs_h,BCNames_h,BCTypes_h),tol=tol,removeBC=removeBC)
+      _recoverBCs(self.pytree,(BCs_h,BCNames_h,BCTypes_h),tol=tol,removeBC=removeBC)
 
     n_assigned_bcs = 0
     bcs = Internal.getNodesFromType(self.pytree,"BC_t")
@@ -1938,6 +1938,74 @@ def _recoverBCsC(a, T, tol=1.e-11):
     C.freeHook(hook)
 
   return list_BCs, list_BCNames, list_BCTypes
+def _recoverBCs(a, T, tol=1.e-11,removeBC=True):
+  """Recover given BCs on a tree.
+  Usage: _recoverBCs(a, (BCs, BCNames, BCTypes), tol)"""
+  try:import Post.PyTree as P
+  except: raise ImportError("_recoverBCs: requires Post module.")
+  C._deleteZoneBC__(a)
+  zones = Internal.getZones(a)
+  (BCs, BCNames, BCTypes) = T
+  for z in zones:
+    indicesF = []
+    try: f = P.exteriorFaces(z, indices=indicesF)
+    except: continue
+    indicesF = indicesF[0]
+    hook = C.createHook(f, 'elementCenters')
+
+    for c in range(len(BCs)):
+      b = BCs[c]
+
+      if b == []:
+        raise ValueError("_recoverBCs: boundary is probably ill-defined.")
+      # Break BC connectivity si necessaire
+      elts = Internal.getElementNodes(b)
+      size = 0
+      for e in elts:
+        erange = Internal.getNodeFromName1(e, 'ElementRange')[1]
+        size += erange[1]-erange[0]+1
+      n = len(elts)
+      if n == 1:
+        ids = C.identifyElements(hook, b, tol)
+      else:
+        bb = C.breakConnectivity(b)
+        ids = numpy.array([], dtype=Internal.E_NpyInt)
+        for bc in bb:
+          ids = numpy.concatenate([ids, identifyElements(hook, bc, tol)])
+
+      # Cree les BCs
+      ids0 = ids # keep ids for bcdata
+      ids  = ids[ids > -1]
+      sizebc = ids.size
+      if sizebc > 0:
+        id2 = numpy.empty(sizebc, dtype=Internal.E_NpyInt)
+        id2[:] = indicesF[ids[:]-1]
+        C._addBC2Zone(z, BCNames[c], BCTypes[c], faceList=id2)
+
+        # Recupere BCDataSets
+        fsc = Internal.getNodeFromName(b, Internal.__FlowSolutionCenters__)
+
+        if fsc is not None:
+          newNameOfBC = C.getLastBCName(BCNames[c])
+          bcz = Internal.getNodeFromNameAndType(z, newNameOfBC, 'BC_t')
+
+          ds = Internal.newBCDataSet(name='BCDataSet', value='UserDefined',
+                                   gridLocation='FaceCenter', parent=bcz)
+          d = Internal.newBCData('NeumannData', parent=ds)
+
+          for node in Internal.getChildren(fsc):
+            if Internal.isType(node, 'DataArray_t'):
+              val0 = Internal.getValue(node)
+              if isinstance(val0,numpy.ndarray) or isinstance(val0,list):
+                 val0 = numpy.reshape(val0, val0.size, order='F')
+              else:
+                 val0 = numpy.array([val0])
+              val1 = val0[ids0>-1]
+              Internal._createUniqueChild(d, node[0], 'DataArray_t', value=val1)
+
+    C.freeHook(hook)
+
+  return None
 
 def create_Quad2Quad(coordinates, nonconformal_faces, nonconformal_faces_ctr,plane="xy",tol=1e-6):
 
