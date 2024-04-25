@@ -1176,6 +1176,54 @@ class Converter_FSDM_CGNS:
               Internal.newDataArray(boundary_values_name, value = boundary_values_numpy[:,j][self.indices_per_boundary[i]], parent = boundarystate)
     return
 
+  def recoverFlowSolution(self):
+    nameAugState = None
+    namesDatasets = []
+    for datasetName in self.fsmesh.GetUnstructDatasetNames():
+      nameAugState = str(datasetName)
+      namesDatasets.append(str(datasetName))
+      if nameAugState != "Coordinates":
+          print("Dataset:",nameAugState)
+          unstructDataset = self.fsmesh.GetUnstructDataset(nameAugState)
+          flow_solution_values = unstructDataset.GetValues()
+          flow_solution_names = unstructDataset.GetNames()
+          types  = unstructDataset.GetCellTypes()
+          types_numpy = numpy.array(types.Buffer(),copy=True)
+
+          indices_GC = numpy.empty(0,dtype=numpy.int32)
+          totalNCells = 0
+          for idx,cell_type in enumerate(types):
+             NOwnedCells = self.fsmesh.GetNOwnedCells(cell_type)
+             NGhostCells = self.fsmesh.GetNGhostCells(cell_type)
+             NCells = self.fsmesh.GetNCells(cell_type)
+             indices_GC = numpy.concatenate([indices_GC,numpy.arange(totalNCells+NOwnedCells,totalNCells+NCells)])
+             totalNCells += NCells
+          flow_solution_values_numpy = numpy.array(flow_solution_values.Buffer(),copy=True)
+          flow_solution_values_numpy = numpy.delete(flow_solution_values_numpy, indices_GC,axis=0)
+
+          flow_solution_names_string = []
+          for name in flow_solution_names:
+            flow_solution_names_string.append(str(name))
+
+          if cell_type in self.fs_volume_cell_types:
+              zone = Internal.getZones(self.pytree)[0]
+              #FS = Internal.newFlowSolution(name='FlowSolution#'+nameAugState, gridLocation='CellCenter', parent=zone)
+              FS = Internal.newFlowSolution(name='FlowSolution#Centers', gridLocation='CellCenter', parent=zone)
+              for i,augState_name in enumerate(flow_solution_names_string):
+                #Internal.newDataArray(augState_name, value = flow_solution_values_numpy[:,i], parent = FS)
+                Internal.newDataArray(nameAugState+"."+augState_name, value = flow_solution_values_numpy[:,i], parent = FS)
+          elif cell_type in self.fs_surface_cell_types:
+              zone_bc = Internal.getNodeFromType(self.pytree,"ZoneBC_t")
+              if zone_bc != None:
+                nodes_bcs = Internal.getNodesFromType(zone_bc,"BC_t")
+                for i,node_bc in enumerate(nodes_bcs):
+                    boundarystatedataset=Internal.getNodeFromType(node_bc,'BCDataSet_t')
+                    boundarystate = Internal.getNodeFromType(boundarystatedataset,'BCData_t')
+                    for j,boundary_values_name in enumerate(flow_solution_names_string):
+                        Internal.newDataArray(boundary_values_name, value = flow_solution_values_numpy[:,j][self.indices_per_boundary[i]], parent = boundarystate)
+
+    return
+
   def exportCGNSmesh(self):
     #Done : write cgns file
     C.convertPyTree2File(self.pytree, self.mesh_name.split('.')[0]+".cgns")
@@ -1190,10 +1238,11 @@ class Converter_FSDM_CGNS:
     self.recoverFSDMConnectivity(ghostCells=False,surf=True)
     self.buildCGNSConnectivity(surf=True)
     if self.keepFlowSolution:
-      self.recoverFlowSolutionAugStateVolume()
-      self.recoverFlowSolutionAugStateSurface()
-      self.recoverFlisWallDistance()
-      self.recoverFlowSolutionBodyForce()
+      self.recoverFlowSolution()
+      #self.recoverFlowSolutionAugStateVolume()
+      #self.recoverFlowSolutionAugStateSurface()
+      #self.recoverFlisWallDistance()
+      #self.recoverFlowSolutionBodyForce()
     if Cmpi.size>1:
       Cmpi._setProc(self.pytree, Cmpi.rank)
       zones = Internal.getZones(self.pytree)
@@ -1788,7 +1837,7 @@ class Converter_FSDM_CGNS:
     else:
       self.pytree = C.newPyTree(['Base', self.pytree])
 
-    if self.keepFlowSolution: _fixNodesForBodyForces(self.pytree)
+    if self.keepFlowSolution: _fixNodesForFlowSolution(self.pytree)
 
     return None
 
@@ -1815,7 +1864,7 @@ class Converter_FSDM_CGNS:
 
       ############
       zbcs = []
-      FS = Internal.getNodeFromType(t,"FlowSolution_t")
+      FS = Internal.getNodesFromType(t,"FlowSolution_t")
       Internal._rmNodesByType(t,"FlowSolution_t")
       for family_name in family_names:
         zbc = C.extractBCOfType(t,"FamilySpecified:"+family_name)
@@ -1824,7 +1873,8 @@ class Converter_FSDM_CGNS:
 
       C._recoverBCs(t,(zbcs,family_names,family_types),tol=tol,removeBC=True)
       zone = Internal.getZones(t)
-      Internal._addChild(zone[0], FS, pos=-1) # at the end
+      for FS_node in FS:
+        Internal._addChild(zone[0], FS_node, pos=-1) # at the end
 
       return None
 
@@ -1898,23 +1948,26 @@ def checkTree(t1, t2):
     return True
 
 
-def _fixNodesForBodyForces(t):
+def _fixNodesForFlowSolution(t):
 
   FS_C = Internal.getNodeFromName(t,"FlowSolution#Centers")
-  if FS_C != None:
-    BodyForceDatasets = []
-    for node in FS_C[2][1:]:
-      if node[0].split(".")[0] == "SourceTerm":
-        BodyForceDatasets.append(node[0])
+  flow_solution_names = []
+  array_names = []
+  dictio = {}
+  for node in FS_C[2][1:]:
+    first = node[0].split(".")[0]
+    second = node[0].split(".")[1]
+    if first not in dictio:
+        dictio[first] = []
+    dictio[first].append(second)
 
-    if BodyForceDatasets != []:
-      zone = Internal.getZones(t)[0]
-      FS_ST = Internal.newFlowSolution(name='FlowSolution#SourceTerm', gridLocation='CellCenter', parent=zone)
-      for bfname in BodyForceDatasets:
-        nodeBF = Internal.getNodeFromName(FS_C,bfname)
-        Internal.newDataArray(bfname.split(".")[1], value = nodeBF[1], parent = FS_ST)
-        Internal._rmNodesByName(FS_C,bfname)
-
+  zone = Internal.getZones(t)
+  for flow_solution_name,array_names in dictio.items():
+    FS_new = Internal.newFlowSolution(name='FlowSolution#'+flow_solution_name, gridLocation='CellCenter', parent=zone[0])
+    for array_name in array_names:
+      node = Internal.getNodeFromName(FS_C,flow_solution_name+"."+array_name)
+      Internal.newDataArray(array_name, value = node[1], parent = FS_new)
+  Internal._rmNodesByName(t,"FlowSolution#Centers")
   return None
 
 
