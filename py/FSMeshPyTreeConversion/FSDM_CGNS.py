@@ -1792,6 +1792,64 @@ class Converter_FSDM_CGNS:
 
     return None
 
+  def merge_BCs_std(self,tol=1e-11):
+      print("Merging BCs: one BC per boundary marker")
+      t = self.pytree
+      BCnodes = Internal.getNodesFromType(t, 'BC_t')
+      family_names = []
+      family_types = []
+      markers = []
+
+      for bcnode in BCnodes:
+        name = Internal.getName(bcnode)
+        bctype = Internal.getValue(bcnode)
+        family_name = name.split('.')[0]
+        marker = (name.split('.')[1]).split('_')[1]
+        family_name_marker = family_name+"_BoundaryMarker_"+str(marker)
+        if marker not in markers:
+          markers.append(marker)
+          family_names.append(family_name_marker)
+          family_types.append(bctype)
+        Internal.createChild(bcnode, 'FamilyName', 'FamilyName_t', value=family_name_marker, pos=0)
+        Internal.setValue(bcnode, 'FamilySpecified')
+
+      ############
+      zbcs = []
+      FS = Internal.getNodeFromType(t,"FlowSolution_t")
+      Internal._rmNodesByType(t,"FlowSolution_t")
+      for family_name in family_names:
+        zbc = C.extractBCOfType(t,"FamilySpecified:"+family_name)
+        zbc = T.join(zbc)
+        zbcs.append(zbc)
+
+      C._recoverBCs(t,(zbcs,family_names,family_types),tol=tol,removeBC=True)
+      zone = Internal.getZones(t)
+      Internal._addChild(zone[0], FS, pos=-1) # at the end
+
+      return None
+
+  def merge_BCs_FamilySpecified(self):
+      print("Specifying FamilySpecified BCs: one FamilyName per boundary marker")
+      t = self.pytree
+      BCs = []
+      BCnodes = Internal.getNodesFromType(t, 'BC_t')
+
+      for bcnode in BCnodes:
+          name = Internal.getName(bcnode)
+          bctype = Internal.getValue(bcnode)
+          family_name = name.split('.')[0]
+          BCs.append((name, bctype, family_name))
+          Internal.createChild(bcnode, 'FamilyName', 'FamilyName_t', value=family_name, pos=0)
+          Internal.setValue(bcnode, 'FamilySpecified')
+
+      base = Internal.getNodeFromType(t, 'CGNSBase_t')
+
+      for bc in BCs:
+          if Internal.getNodesFromNameAndType(t, bc[2], 'Family_t') == []:
+              family_node = Internal.createNode(bc[2], 'Family_t', parent=base)
+              Internal.createChild(family_node, 'FamilyBC', 'FamilyBC_t', value=bc[1], pos=0)
+      return None
+
   def test(self,mesh,DATA,TOLERANCE=1e-11):
     """Test pyTrees."""
     import KCore.test as test
