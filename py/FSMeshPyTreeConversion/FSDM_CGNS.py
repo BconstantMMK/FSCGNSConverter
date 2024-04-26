@@ -23,7 +23,7 @@ import os, sys,time
 
 class Converter_FSDM_CGNS:
 
-  def __init__(self,mesh_name="mesh",clac=FSClac(),fsmesh=None,dimPb=2,invertPlanesYZ=False,conformal=True,IBM=False,IBM_parameters={},keepFlowSolution=False,dict_BCs={},inmemory=False):
+  def __init__(self,mesh_name="mesh",clac=FSClac(),fsmesh=None,dimPb=2,invertPlanesYZ=False,conformal=True,IBM=False,IBM_parameters={},keepFlowSolution=False,whichDatasets=[],dict_BCs={},inmemory=False):
 
     #Parameters passed as arguments
     self.mesh_name = mesh_name
@@ -33,6 +33,7 @@ class Converter_FSDM_CGNS:
     self.IBM_parameters = IBM_parameters
     self.invertPlanesYZ = invertPlanesYZ
     self.keepFlowSolution = keepFlowSolution
+    self.whichDatasets = whichDatasets
     self.inmemory = inmemory
     #Variables defined inside the class
 
@@ -1177,12 +1178,12 @@ class Converter_FSDM_CGNS:
     return
 
   def recoverFlowSolution(self):
-    nameAugState = None
-    namesDatasets = []
+    if self.whichDatasets == []:
+        print("All the available datasets will be converted in the cgns pytree.")
+
     for datasetName in self.fsmesh.GetUnstructDatasetNames():
       nameAugState = str(datasetName)
-      namesDatasets.append(str(datasetName))
-      if nameAugState != "Coordinates":
+      if nameAugState != "Coordinates" and (self.whichDatasets==[] or (nameAugState in self.whichDatasets)):
           print("Dataset:",nameAugState)
           unstructDataset = self.fsmesh.GetUnstructDataset(nameAugState)
           flow_solution_values = unstructDataset.GetValues()
@@ -1837,6 +1838,7 @@ class Converter_FSDM_CGNS:
     else:
       self.pytree = C.newPyTree(['Base', self.pytree])
 
+    print("Fixing Flow Solution..")
     if self.keepFlowSolution: _fixNodesForFlowSolution(self.pytree)
 
     return None
