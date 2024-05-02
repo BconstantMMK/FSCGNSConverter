@@ -203,36 +203,6 @@ class Converter_FSDM_CGNS:
     self.nb_cells_surface -= len_NCF
     return
 
-  def createDatasetOfNonConformalFaces_old(self):
-
-    xCoord = Internal.getNodeFromName(self.pytree,"CoordinateX")[1]
-    yCoord = Internal.getNodeFromName(self.pytree,"CoordinateY")[1]
-    zCoord = Internal.getNodeFromName(self.pytree,"CoordinateZ")[1]
-
-    octree_faces_node = Internal.getNodesFromName(self.pytree,"NonConformalFaces")
-    octree_faces_EC = Internal.getNodeFromName(octree_faces_node,"ElementConnectivity")[1]
-
-    rm = Internal.getNodesFromName(self.pytree,'NonConformalFaces')
-    for i in rm:
-      Internal._rmNode(self.pytree,i)
-    octree_faces = Internal.createNode("NonConformalFaces",'ElementData_t',parent=self.pytree)
-
-    Internal.newDataArray('GlobalElementConnectivity', value = octree_faces_EC, parent = octree_faces)
-    xCoordCenters,yCoordCenters,zCoordCenters = computeCellCenters_Quads(xCoord, yCoord, zCoord, octree_faces_EC-1)
-    Internal.newDataArray('CoordinateXCenters', value = xCoordCenters, parent = octree_faces)
-    Internal.newDataArray('CoordinateYCenters', value = yCoordCenters, parent = octree_faces)
-    Internal.newDataArray('CoordinateZCenters', value = zCoordCenters, parent = octree_faces)
-    _,idx = numpy.unique(octree_faces_EC,return_index=True)
-    octree_faces_idx_nodes = octree_faces_EC[numpy.sort(idx)]
-    xCoord_nodes_HF = xCoord[octree_faces_idx_nodes-1]
-    yCoord_nodes_HF = yCoord[octree_faces_idx_nodes-1]
-    zCoord_nodes_HF = zCoord[octree_faces_idx_nodes-1]
-    Internal.newDataArray('CoordinateXNodes', value = xCoord_nodes_HF, parent = octree_faces)
-    Internal.newDataArray('CoordinateYNodes', value = yCoord_nodes_HF, parent = octree_faces)
-    Internal.newDataArray('CoordinateZNodes', value = zCoord_nodes_HF, parent = octree_faces)
-    Internal.newDataArray('Indices', value = octree_faces_idx_nodes-1, parent = octree_faces)
-    return self.pytree
-
   def createZoneOfNonConformalFaces(self):
 
     xCoord = Internal.getNodeFromName(self.pytree,"CoordinateX")[1]
@@ -768,27 +738,8 @@ class Converter_FSDM_CGNS:
 
       self.createDatasetOfCoordinatesBC(self.fsmesh,IBMDataset1, IBMDataset2, IBMDataset3,IBMDatasets[0],self.nb_cells_surface,pointlistIBC)
 
-
-
     self.fsmesh.PrintInfo()
 
-
-
-    """
-    if self.IBM == True:
-      IBM_boundary_marker = marker
-      print(IBM_boundary_marker)
-      flag=False
-      if IBM_boundary_marker in boundary_marker_to_bc_name2:
-
-        self.createDatasetOfCoordinatesBC(self.fsmesh,IBMDatasets[1], IBMDatasets[2], IBMDatasets[3] ,IBMDatasets[0],self.nb_cells_surface,boundary_marker_to_point_list2[IBM_boundary_marker]-self.nb_cells_volume)
-        if self.IBM_parameters["IBM type"]["type"]=="local":
-            wall_boundary_markers = self.IBM_parameters["IBM type"]["wall boundary markers"]
-            self.createDatasetOfCoordinatesBC(self.fsmesh,IBMDatasets[5], IBMDatasets[6], IBMDatasets[7],IBMDatasets[4],self.nb_cells_surface,boundary_marker_to_point_list2[wall_boundary_markers[0]]-self.nb_cells_volume)
-    """
-
-           #Var = fsmesh.GetUnstructDataset(fsdataname).GetValues()
-         #Var.Fill(0.0)
     return
 
   def createDatasetOfCoordinatesBC(self,fsmesh,coords_x, coords_y, coords_z,BC_names,nb_cell_surf,point_list):
@@ -872,7 +823,6 @@ class Converter_FSDM_CGNS:
         self.initBCsFSDMmesh_MPI(IBMDatasets)
     else:
         self.initBCsFSDMmesh(IBMDatasets)
-    #if self.conformal==False: self.initializePseudoCell_QuadNQuad(z_NCfaces)
     if self.MPI==True:
       self.serialDeduplicateNodesFSMesh()
     if self.inmemory:
@@ -1060,124 +1010,6 @@ class Converter_FSDM_CGNS:
         counter_cells += nb_cell_current_boundary
     return
 
-  def recoverFlowSolutionBodyForce(self):
-    nameBodyForce = None
-    for datasetName in self.fsmesh.GetUnstructDatasetNames():
-      if datasetName.StartsWith("BodyForce"):
-        nameBodyForce = datasetName
-        augState_data = self.fsmesh.GetUnstructDataset(nameBodyForce).GetValues()
-        augState_names = self.fsmesh.GetUnstructDataset(nameBodyForce).GetNames()
-    if nameBodyForce == None:
-      return
-    else:
-      indices_GC = numpy.empty(0,dtype=numpy.int32)
-      totalNCells = 0
-      for idx,cell_type in enumerate(self.fs_volume_cell_types):
-         NOwnedCells = self.fsmesh.GetNOwnedCells(cell_type)
-         NGhostCells = self.fsmesh.GetNGhostCells(cell_type)
-         NCells = self.fsmesh.GetNCells(cell_type)
-         indices_GC = numpy.concatenate([indices_GC,numpy.arange(totalNCells+NOwnedCells,totalNCells+NCells)])
-         totalNCells += NCells
-      augState_data_numpy = numpy.array(augState_data.Buffer(),copy=True)
-      augState_data_numpy = numpy.delete(augState_data_numpy, indices_GC,axis=0)
-      augState_names_string = []
-      for name in augState_names:
-        augState_names_string.append("SourceTerm."+str(name))
-
-      zone = Internal.getZones(self.pytree)[0]
-      FS = Internal.getNodeFromName(zone,'FlowSolution#Centers')
-      for i,augState_name in enumerate(augState_names_string):
-        Internal.newDataArray(augState_name, value = augState_data_numpy[:,i], parent = FS)
-
-      return
-
-  def recoverFlisWallDistance(self):
-    presentFlag = False
-    for datasetName in self.fsmesh.GetUnstructDatasetNames():
-      if datasetName.EndsWith("Distance") or datasetName.EndsWith("distance") or datasetName.EndsWith("Distances") or datasetName.EndsWith("distances"):
-        augState_data = self.fsmesh.GetUnstructDataset(datasetName).GetValues()
-        augState_data_numpy = numpy.array(augState_data.Buffer(),copy=True)
-        presentFlag = True
-    indices_GC = numpy.empty(0,dtype=numpy.int32)
-    totalNCells = 0
-    for idx,cell_type in enumerate(self.fs_volume_cell_types):
-       NOwnedCells = self.fsmesh.GetNOwnedCells(cell_type)
-       NGhostCells = self.fsmesh.GetNGhostCells(cell_type)
-       NCells = self.fsmesh.GetNCells(cell_type)
-       indices_GC = numpy.concatenate([indices_GC,numpy.arange(totalNCells+NOwnedCells,totalNCells+NCells)])
-       totalNCells += NCells
-    if presentFlag:
-      augState_data_numpy = numpy.array(augState_data.Buffer(),copy=True)
-      augState_data_numpy = numpy.delete(augState_data_numpy, indices_GC,axis=0)
-      zone = Internal.getZones(self.pytree)[0]
-      FS = Internal.getNodeFromName(zone,'FlowSolution#Centers')
-      Internal.newDataArray("TurbulentDistance", value = augState_data_numpy[:,0], parent = FS)
-
-    return
-
-  def recoverFlowSolutionAugStateVolume(self):
-    nameAugState = None
-    namesDatasets = []
-    for datasetName in self.fsmesh.GetUnstructDatasetNames():
-      namesDatasets.append(str(datasetName))
-    if "AugState" in namesDatasets: nameAugState = "AugState"
-    elif "State" in namesDatasets: nameAugState = "State"
-    else: raise ValueError("The flow solution dataset should be called either \"AugState\" or \"State\"")
-    augState_data = self.fsmesh.GetUnstructDataset(nameAugState).GetValues()
-    augState_names = self.fsmesh.GetUnstructDataset(nameAugState).GetNames()
-    indices_GC = numpy.empty(0,dtype=numpy.int32)
-    totalNCells = 0
-    for idx,cell_type in enumerate(self.fs_volume_cell_types):
-       NOwnedCells = self.fsmesh.GetNOwnedCells(cell_type)
-       NGhostCells = self.fsmesh.GetNGhostCells(cell_type)
-       NCells = self.fsmesh.GetNCells(cell_type)
-       indices_GC = numpy.concatenate([indices_GC,numpy.arange(totalNCells+NOwnedCells,totalNCells+NCells)])
-       totalNCells += NCells
-    augState_data_numpy = numpy.array(augState_data.Buffer(),copy=True)
-    augState_data_numpy = numpy.delete(augState_data_numpy, indices_GC,axis=0)
-    augState_names_string = []
-    for name in augState_names:
-      augState_names_string.append(str(name))
-
-    zone = Internal.getZones(self.pytree)[0]
-    FS = Internal.newFlowSolution(name='FlowSolution#Centers', gridLocation='CellCenter', parent=zone)
-    for i,augState_name in enumerate(augState_names_string):
-      Internal.newDataArray(augState_name, value = augState_data_numpy[:,i], parent = FS)
-
-    return
-
-  def recoverFlowSolutionAugStateSurface(self): #problem cassiopee
-    for datasetName in self.fsmesh.GetUnstructDatasetNames():
-      if datasetName.StartsWith("Boundary"):
-        boundary_values_data = self.fsmesh.GetUnstructDataset(datasetName).GetValues()
-        boundary_values_names = self.fsmesh.GetUnstructDataset(datasetName).GetNames()
-
-    indices_GC = numpy.empty(0,dtype=numpy.int32)
-    totalNCells = 0
-    for idx,cell_type in enumerate(self.fs_surface_cell_types):
-       NOwnedCells = self.fsmesh.GetNOwnedCells(cell_type)
-       NGhostCells = self.fsmesh.GetNGhostCells(cell_type)
-       NCells = self.fsmesh.GetNCells(cell_type)
-       indices_GC = numpy.concatenate([indices_GC,numpy.arange(totalNCells+NOwnedCells,totalNCells+NCells)])
-       totalNCells += NCells
-
-    boundary_values_numpy = numpy.array(boundary_values_data.Buffer(), copy=True)
-    boundary_values_numpy = numpy.delete(boundary_values_numpy, indices_GC,axis=0)
-
-
-    boundary_values_names_string = []
-    for name in boundary_values_names:
-      boundary_values_names_string.append(str(name))
-    zone_bc = Internal.getNodeFromType(self.pytree,"ZoneBC_t")
-    if zone_bc != None:
-      nodes_bcs = Internal.getNodesFromType(zone_bc,"BC_t")
-      for i,node_bc in enumerate(nodes_bcs):
-          boundarystatedataset=Internal.getNodeFromType(node_bc,'BCDataSet_t')
-          boundarystate = Internal.getNodeFromType(boundarystatedataset,'BCData_t')
-          for j,boundary_values_name in enumerate(boundary_values_names_string):
-              Internal.newDataArray(boundary_values_name, value = boundary_values_numpy[:,j][self.indices_per_boundary[i]], parent = boundarystate)
-    return
-
   def recoverFlowSolution(self):
     if self.whichDatasets == []:
         print("All the available datasets will be converted in the cgns pytree.")
@@ -1209,10 +1041,8 @@ class Converter_FSDM_CGNS:
 
           if cell_type in self.fs_volume_cell_types:
               zone = Internal.getZones(self.pytree)[0]
-              #FS = Internal.newFlowSolution(name='FlowSolution#'+nameAugState, gridLocation='CellCenter', parent=zone)
               FS = Internal.newFlowSolution(name='FlowSolution#Centers', gridLocation='CellCenter', parent=zone)
               for i,augState_name in enumerate(flow_solution_names_string):
-                #Internal.newDataArray(augState_name, value = flow_solution_values_numpy[:,i], parent = FS)
                 Internal.newDataArray(nameAugState+"."+augState_name, value = flow_solution_values_numpy[:,i], parent = FS)
           elif cell_type in self.fs_surface_cell_types:
               zone_bc = Internal.getNodeFromType(self.pytree,"ZoneBC_t")
@@ -1241,10 +1071,6 @@ class Converter_FSDM_CGNS:
     self.buildCGNSConnectivity(surf=True)
     if self.keepFlowSolution:
       self.recoverFlowSolution()
-      #self.recoverFlowSolutionAugStateVolume()
-      #self.recoverFlowSolutionAugStateSurface()
-      #self.recoverFlisWallDistance()
-      #self.recoverFlowSolutionBodyForce()
     if Cmpi.size>1:
       Cmpi._setProc(self.pytree, Cmpi.rank)
       zones = Internal.getZones(self.pytree)
@@ -1382,9 +1208,6 @@ class Converter_FSDM_CGNS:
 
       len_nodes_allgathered = len(allgathered_nodes)
 
-      #numpy.hstack([allgathered_x.reshape((len_nodes_allgathered,1)),allgathered_y.reshape((len_nodes_allgathered,1)),allgathered_z.reshape((len_nodes_allgathered,1))])
-
-      #del allgathered_x; del allgathered_y; del allgathered_z
       nonconformal_faces_ctr_x,nonconformal_faces_ctr_y,nonconformal_faces_ctr_z = computeCellCenters_Quads(allgathered_nodes[:,0], allgathered_nodes[:,1], allgathered_nodes[:,2], allgathered_nonconformal_faces_local)
 
       nonconformal_faces_ctr = numpy.hstack([nonconformal_faces_ctr_x.reshape((len_NCF,1)),nonconformal_faces_ctr_y.reshape((len_NCF,1)),nonconformal_faces_ctr_z.reshape((len_NCF,1))])
@@ -1404,8 +1227,6 @@ class Converter_FSDM_CGNS:
       print(Cmpi.rank,"time for hanging nodes search: ", toc-tic)
       print(Cmpi.rank, "size listQuadNQuad",listQuadNQuad_local.shape[0])
 
-
-      #if Cmpi.rank!=0: listQuadNQuad_local = numpy.empty(0)
       if self.dimPb==2 and self.MPI==True:
           listQuadNQuad_local = dedup2dup[listQuadNQuad_local]
 
@@ -1451,8 +1272,6 @@ class Converter_FSDM_CGNS:
       elif self.dimPb == 3: self.fsmesh.InitUnstructCells(FSMeshEnums.PCT_Quad4Quad, fs_cell2node, False)
 
     return None
-
-
 
   def _addBC2ZoneLoc(self,z, bndName, bndType, zbc, loc='FaceCenter', zdnrName=None):
     s = bndType.split(':')
@@ -1510,15 +1329,11 @@ class Converter_FSDM_CGNS:
       else:
         quadNQuad = 16
 
-      #self.fsmesh.HasGlobalNumbering() or self.fsmesh.CreateGlobalNumbering()
-      #FindGlobalNumber(self.fsmesh)
-
       node_coordinates = self.fsmesh.GetUnstructDataset("Coordinates").GetValues()
       node_coordinates_numpy = numpy.array(node_coordinates.Buffer(), copy=True)
       myID = self.clac.GetProcID()
 
       node_coordinates_numpy = ArrayOps.Gather(node_coordinates_numpy,self.clac)
-
 
       unique_coords = numpy.empty((0,3))
       dup2dedup = numpy.empty((0),dtype=int)
@@ -1673,8 +1488,6 @@ class Converter_FSDM_CGNS:
                      Var[VarIndex] = dataset[elemIndex][1]
                      VarIndex =    Var.MapIndex(elemIndex, 2)
                      Var[VarIndex] = dataset[elemIndex][2]
-      #self.fsmesh.ExportMeshHDF5(Filename=self.mesh_name.split('.')[0]+".h5") #or FSError.PrintAndExit()
-      #self.fsmesh.ExportMeshTECPLOT(Filename=self.mesh_name.split('.')[0]+".plt") or FSError.PrintAndExit()
 
       return
 
@@ -1874,7 +1687,7 @@ class Converter_FSDM_CGNS:
         zbc = T.join(zbc)
         zbcs.append(zbc)
 
-      C._recoverBCs(t,(zbcs,family_names,family_types),tol=tol,removeBC=True)
+      _recoverBCs(t,(zbcs,family_names,family_types),tol=tol,removeBC=True)
       zone = Internal.getZones(t)
       for FS_node in FS:
         Internal._addChild(zone[0], FS_node, pos=-1) # at the end
@@ -1902,54 +1715,6 @@ class Converter_FSDM_CGNS:
               family_node = Internal.createNode(bc[2], 'Family_t', parent=base)
               Internal.createChild(family_node, 'FamilyBC', 'FamilyBC_t', value=bc[1], pos=0)
       return None
-
-  def test(self,mesh,DATA,TOLERANCE=1e-11):
-    """Test pyTrees."""
-    import KCore.test as test
-
-    # Transforme t en pyTree, pour pouvoir relire la reference
-    t, ntype = Internal.node2PyTree(self.pytree)
-
-    # Check OWNDATA / copy
-    C._ownNumpyArrays(t)
-
-    # Check Data directory
-    a = os.access(DATA, os.F_OK)
-    if not a:
-        print("Data directory doesn't exist. Created.")
-        os.mkdir(DATA)
-
-    # Construit le nom du fichier de reference
-    reference = DATA+"/"+mesh.split(".")[0]+".cgns"
-    a = os.access(reference, os.R_OK)
-    if not a:
-        print("Warning: reference file %s has been created."%reference)
-        C.convertPyTree2File(t, reference, 'bin_pickle')
-        return True
-    else:
-        old = C.convertFile2PyTree(reference, 'bin_pickle')
-        retour = checkTree(t, old)
-    return retour
-
-def checkTree(t1, t2):
-    import KCore.test as test
-    """Check that pyTree t1 and t2 are identical."""
-    dict1 = {}
-    test.buildDict__('.', dict1, t1)
-    dict2 = {}
-    test.buildDict__('.', dict2, t2)
-    for k in dict2.keys():
-        node2 = dict2[k]
-        # cherche le noeud equivalent dans t1
-        if k not in dict1:
-            print('DIFF: node %s existe dans reference mais pas dans courant.'%k)
-        else:
-            node1 = dict1[k]
-            r = test.checkTree__(node1, node2)
-            if r == 0:
-              return False
-    return True
-
 
 def _fixNodesForFlowSolution(t):
 
@@ -2477,11 +2242,6 @@ def create_Quad2Quad_MPI(coordinates, nonconformal_faces, nonconformal_faces_ctr
     # Append to list
     listQuad2Quad.append(thisQuad2Quad)
   listQuad2Quad = numpy.array(listQuad2Quad)
-  #if Cmpi.rank==0:
-  #  with open("points_listQuad2Quad.dat","w") as f:
-  #    for i in range(len(listQuad2Quad)):
-  #        for j in range(6):
-  #            f.write("%f %f %f\n" %(coordinates[listQuad2Quad[i][j]][0],coordinates[listQuad2Quad[i][j]][1],coordinates[listQuad2Quad[i][j]][2]) )
 
   if listQuad2Quad.shape[0] != nfaces/3:
       raise ValueError("Problem on non conformal faces: only %d out of %d have been matched." %(listQuad2Quad.shape[0],nfaces//3))
