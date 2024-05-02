@@ -1,4 +1,5 @@
 import Converter.PyTree as C
+import Converter.converter as converter
 import Converter.Mpi as Cmpi
 import Transform.PyTree as T
 import Intersector.PyTree as XOR
@@ -1980,7 +1981,6 @@ def _recoverBCsC(a, T, tol=1.e-11):
   except: raise ImportError("_recoverBCs: requires Post module.")
   C._deleteZoneBC__(a)
   zones = Internal.getZones(a)
-  #print(len(zones)) #SEMPRE 1!!!
   (BCs, BCNames, BCTypes) = T
   for z in zones:
     indicesF = []
@@ -2013,15 +2013,13 @@ def _recoverBCsC(a, T, tol=1.e-11):
 
       # Cree les BCs
       ids0 = ids # keep ids for bcdata
-      ids2 = numpy.where(ids0<0)[0]
-      ids3 = numpy.where(ids0>-1)[0]
       ids  = ids[ids > -1]
       sizebc = ids.size
-      if sizebc >=0 and len(ids) < len(ids0):
+      if len(ids) < len(ids0):
             list_BCs.append(b)
             list_BCNames.append(BCNames[c])
             list_BCTypes.append(BCTypes[c])
-      if sizebc > 0:
+      else:
         id2 = numpy.empty(sizebc, dtype=Internal.E_NpyInt)
         id2[:] = indicesF[ids[:]-1]
         C._addBC2Zone(z, BCNames[c], BCTypes[c], faceList=id2)
@@ -2040,7 +2038,7 @@ def _recoverBCsC(a, T, tol=1.e-11):
           for node in Internal.getChildren(fsc):
             if Internal.isType(node, 'DataArray_t'):
               val0 = Internal.getValue(node)
-              if isinstance(val0,numpy.ndarray) or isinstance(val0,list):
+              if isinstance(val0,numpy.ndarray):
                 val0 = numpy.reshape(val0, val0.size, order='F')
               else:
                 val0 = numpy.reshape([val0], 1, order='F')
@@ -2051,7 +2049,109 @@ def _recoverBCsC(a, T, tol=1.e-11):
     C.freeHook(hook)
 
   return list_BCs, list_BCNames, list_BCTypes
-def _recoverBCs(a, T, tol=1.e-11,removeBC=True):
+
+# -- recoverBCs
+# Identifie des subzones comme BC Faces
+# IN: liste de geometries de BC, liste de leur nom, liste de leur type
+# OUT: a modifie avec des BCs ajoutees en BCFaces
+
+def _recoverBCs(t, BCInfo, tol=1.e-11, removeBC=True):
+  if removeBC: return _recoverBCs1(t, BCInfo, tol)
+  else: return _recoverBCs2(t, BCInfo, tol)
+
+# N'efface pas les matchs et bc deja existantes
+def _recoverBCs2(t, BCInfo, tol):
+  try: import Post.PyTree as P
+  except: raise ImportError("_recoverBCs: requires Post module.")
+  try: import Transform.PyTree as T
+  except: raise ImportError("_recoverBCs: requires Transform module.")
+  try: import Generator.PyTree as G
+  except: raise ImportError("_recoverBCs: requires Generator module.")
+  (BCs, BCNames, BCTypes) = BCInfo
+  for z in Internal.getZones(t):
+      indicesF = []
+      zf = P.exteriorFaces(z, indices=indicesF)
+      indicesF = indicesF[0]
+      # BC classique
+      bnds = Internal.getNodesFromType2(z, 'BC_t')
+      # BC Match
+      bnds += Internal.getNodesFromType2(z, 'GridConnectivity1to1_t')
+      # BC Overlap/NearMatch/NoMatch
+      bnds += Internal.getNodesFromType2(z, 'GridConnectivity_t')
+      indicesBC = []
+      for b in bnds:
+          f = Internal.getNodeFromName1(b, 'PointList')
+          indicesBC.append(f[1])
+
+      undefBC = False
+      if indicesBC != []:
+          indicesBC = numpy.concatenate(indicesBC, axis=1)
+          nfacesExt = indicesF.shape[0]
+          nfacesDef = indicesBC.shape[1]
+          if nfacesExt < nfacesDef:
+              print('Warning: zone %s: number of faces defined by BCs is greater than the number of external faces. Try to reduce the matching tolerance.'%(z[0]))
+          elif nfacesExt > nfacesDef:
+              indicesBC = indicesBC.reshape( (indicesBC.size) )
+              indicesE = converter.diffIndex(indicesF, indicesBC)
+              undefBC = True
+      else:
+          undefBC = True
+          indicesE = indicesF
+      if undefBC:
+          zf = T.subzone(z, indicesE, type='faces')
+          hook = C.createHook(zf, 'elementCenters')
+          for c in range(len(BCs)):
+              if BCs[c] == []: raise ValueError("_recoverBCs: boundary is probably ill-defined.")
+              for b in BCs[c]:
+                if G.bboxIntersection(zf, b):
+                    # Break BC connectivity si necessaire
+                    elts = Internal.getElementNodes(b)
+                    size = 0
+                    for e in elts:
+                        erange = Internal.getNodeFromName1(e, 'ElementRange')[1]
+                        size += erange[1]-erange[0]+1
+                    n = len(elts)
+                    if n == 1:
+                        ids = C.identifyElements(hook, b, tol)
+                    else:
+                        bb = breakConnectivity(b)
+                        ids = numpy.array([], dtype=Internal.E_NpyInt)
+                        for bc in bb:
+                            ids = numpy.concatenate([ids, C.identifyElements(hook, bc, tol)])
+
+                    # Cree les BCs
+                    ids0 = ids # keep ids for bcdata
+                    ids = ids[ids > -1]
+                    sizebc = ids.size
+                    if sizebc > 0:
+                        id2 = numpy.empty(sizebc, dtype=Internal.E_NpyInt)
+                        id2[:] = indicesE[ids[:]-1]
+                        C._addBC2Zone(z, BCNames[c], BCTypes[c], faceList=id2)
+
+                        # Recupere BCDataSets
+                        fsc = Internal.getNodeFromName(b, Internal.__FlowSolutionCenters__)
+
+                        if fsc is not None:
+                          newNameOfBC = C.getLastBCName(BCNames[c])
+                          bcz = Internal.getNodeFromNameAndType(z, newNameOfBC, 'BC_t')
+
+                          ds = Internal.newBCDataSet(name='BCDataSet', value='UserDefined',
+                                                     gridLocation='FaceCenter', parent=bcz)
+                          d = Internal.newBCData('NeumannData', parent=ds)
+
+                          for node in Internal.getChildren(fsc):
+                            if Internal.isType(node, 'DataArray_t'):
+                              val0 = Internal.getValue(node)
+                              if isinstance(val0,numpy.ndarray):
+                                  val0 = numpy.reshape(val0, val0.size, order='F')
+                              else:
+                                  val0 = numpy.array([val0])
+                              val1 = val0[ids0>-1]
+                              Internal._createUniqueChild(d, node[0], 'DataArray_t', value=val1)
+          C.freeHook(hook)
+  return None
+
+def _recoverBCs1(a, T, tol=1.e-11):
   """Recover given BCs on a tree.
   Usage: _recoverBCs(a, (BCs, BCNames, BCTypes), tol)"""
   try:import Post.PyTree as P
@@ -2084,7 +2184,7 @@ def _recoverBCs(a, T, tol=1.e-11,removeBC=True):
         bb = C.breakConnectivity(b)
         ids = numpy.array([], dtype=Internal.E_NpyInt)
         for bc in bb:
-          ids = numpy.concatenate([ids, identifyElements(hook, bc, tol)])
+          ids = numpy.concatenate([ids, C.identifyElements(hook, bc, tol)])
 
       # Cree les BCs
       ids0 = ids # keep ids for bcdata
@@ -2109,10 +2209,10 @@ def _recoverBCs(a, T, tol=1.e-11,removeBC=True):
           for node in Internal.getChildren(fsc):
             if Internal.isType(node, 'DataArray_t'):
               val0 = Internal.getValue(node)
-              if isinstance(val0,numpy.ndarray) or isinstance(val0,list):
-                 val0 = numpy.reshape(val0, val0.size, order='F')
+              if isinstance(val0,numpy.ndarray):
+                  val0 = numpy.reshape(val0, val0.size, order='F')
               else:
-                 val0 = numpy.array([val0])
+                  val0 = numpy.array([val0])
               val1 = val0[ids0>-1]
               Internal._createUniqueChild(d, node[0], 'DataArray_t', value=val1)
 
