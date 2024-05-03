@@ -10,7 +10,7 @@ import Converter.Internal as Internal
 
 #FSDM imports
 import FSDM
-from FSDataManager import FSClac, FSMesh, FSError, FSFloatArray, FSIntArray, FSStringArray, FSDataName, FSDataSpecArray, FSDatasetInfo, FSMeshEnums, FSUnstructVolumeCellTypes, FSUnstructSurfaceCellTypes, FS_AT_CADGroupID
+from FSDataManager import FSClac, FSMesh, FSError, FSFloatArray, FSIntArray, FSStringArray, FSDataName, FSDataSpecArray, FSDatasetInfo, FSMeshEnums, FSUnstructVolumeCellTypes, FSUnstructSurfaceCellTypes, FS_AT_CADGroupID, FSCellInfo
 import FSZoltan
 import numpy
 from functools import cmp_to_key
@@ -449,16 +449,12 @@ class Converter_FSDM_CGNS:
       for fs_cell_type in self.fs_cell_types:
         nNodesPrevious = self.cell2Proc[FSMeshEnums.CT_Node][myID]
         self.initializeCell2Proc(fs_cell_type)
-        if self.nb_vertices != 0:
-          if (fs_cell_type in FSUnstructSurfaceCellTypes and self.list_names_BCs != []) or fs_cell_type in FSUnstructVolumeCellTypes:
+        if self.nb_vertices != 0 and ((fs_cell_type in FSUnstructSurfaceCellTypes and self.list_names_BCs != []) or fs_cell_type in FSUnstructVolumeCellTypes):
             fs_cell2node = FSIntArray(self.numpy_cell2node[fs_cell_type].shape[0],self.numpy_cell2node[fs_cell_type].shape[1])
             numpy.copyto(numpy.array(fs_cell2node.Buffer(), copy=False), self.numpy_cell2node[fs_cell_type]+nNodesPrevious, casting='unsafe')
             self.fsmesh.InitUnstructCells(fs_cell_type,self.cell2Proc[fs_cell_type],fs_cell2node, True)
-          elif fs_cell_type in FSUnstructSurfaceCellTypes and self.list_names_BCs == []:
-            fs_cell2node = FSIntArray(0,4)
-            self.fsmesh.InitUnstructCells(fs_cell_type,self.cell2Proc[fs_cell_type],fs_cell2node, True)
-        else:
-            fs_cell2node = FSIntArray(0,getNumberVertices(fs_cell_type))
+          elif (fs_cell_type in FSUnstructSurfaceCellTypes and self.list_names_BCs == []) or self.nb_vertices == 0:
+            fs_cell2node = FSIntArray(0,FSCellInfo.NNodes(fs_cell_type))
             self.fsmesh.InitUnstructCells(fs_cell_type,self.cell2Proc[fs_cell_type],fs_cell2node, True)
     else:
       self.fsmesh.InitUnstructNodes(self.nb_vertices)
@@ -1275,24 +1271,17 @@ class Converter_FSDM_CGNS:
         listQuadNQuad = ids_gathered[listQuadNQuad_local]
         fs_cell2node = FSIntArray(listQuadNQuad.shape[0],listQuadNQuad.shape[1])
         numpy.copyto(numpy.array(fs_cell2node.Buffer(), copy=False), listQuadNQuad, casting='unsafe')
-        print("len(list_QuadNQuad",len(listQuadNQuad),listQuadNQuad)
-        if self.dimPb == 2:   self.fsmesh.InitUnstructCells(FSMeshEnums.PCT_Quad2Quad,self.cell2Proc[fs_cell_type], fs_cell2node, True)
-        elif self.dimPb == 3: self.fsmesh.InitUnstructCells(FSMeshEnums.PCT_Quad4Quad,self.cell2Proc[fs_cell_type], fs_cell2node, True)
-        self.fsmesh.PrintInfo()
       else:
         print('continuing on procs!=0')
-        if self.dimPb==2:
-          fs_cell2node = FSIntArray(0,6)
-          self.fsmesh.InitUnstructCells(FSMeshEnums.PCT_Quad2Quad,self.cell2Proc[fs_cell_type],fs_cell2node, False)
-        elif self.dimPb==3:
-          fs_cell2node = FSIntArray(0,9)
-          self.fsmesh.InitUnstructCells(FSMeshEnums.PCT_Quad4Quad,self.cell2Proc[fs_cell_type],fs_cell2node, False)
+        fs_cell2node = FSIntArray(0,FSCellInfo.NNodes(fs_cell_type))
+
+      self.fsmesh.InitUnstructCells(fs_cell_type,self.cell2Proc[fs_cell_type], fs_cell2node, False)
+      self.fsmesh.PrintInfo()
     else:
       listQuadNQuad = ids_gathered[listQuadNQuad_local]
       fs_cell2node = FSIntArray(listQuadNQuad.shape[0],listQuadNQuad.shape[1])
       numpy.copyto(numpy.array(fs_cell2node.Buffer(), copy=False), listQuadNQuad, casting='unsafe')
-      if self.dimPb == 2:   self.fsmesh.InitUnstructCells(FSMeshEnums.PCT_Quad2Quad, fs_cell2node, False)
-      elif self.dimPb == 3: self.fsmesh.InitUnstructCells(FSMeshEnums.PCT_Quad4Quad, fs_cell2node, False)
+      self.fsmesh.InitUnstructCells(fs_cell_type, fs_cell2node, False)
 
     return None
 
@@ -1405,7 +1394,7 @@ class Converter_FSDM_CGNS:
           for i in range(len(cell2Node_numpy)):
             cell2Node_numpy[i] = dup2dedup[cell2Node_numpy[i]]
           cell2NodeDict[t] = cell2Node_numpy
-        else: cell2NodeDict[t] = numpy.empty((0,getNumberVertices(t)))
+        else: cell2NodeDict[t] = numpy.empty((0,FSCellInfo.NNodes(t)))
 
       fs_boundary_marker_list = self.fsmesh.GetCellAttributeValuesWithNames("CADGroupID")
       np_boundary_marker_list = numpy.array(fs_boundary_marker_list.Buffer(),copy=True)
@@ -1449,7 +1438,7 @@ class Converter_FSDM_CGNS:
       for t in [4,8,quadNQuad]:
           if Cmpi.rank==0:
             fs_cell2node = FSIntArray(cell2NodeDict[t].shape[0],cell2NodeDict[t].shape[1])
-          else: fs_cell2node = FSIntArray(0,getNumberVertices(t))
+          else: fs_cell2node = FSIntArray(0,FSCellInfo.NNodes(t))
 
           cell2Proc = initializeCell2ProcOutsideClass(t,self.clac,cell2NodeDict[t])
           numpy.copyto(numpy.array(fs_cell2node.Buffer(), copy=False), cell2NodeDict[t], casting='unsafe')
@@ -2396,9 +2385,3 @@ def initializeCell2ProcOutsideClass(t,clac,i):
        CORRECT_newcell2ProcGathered[i+1] = int(CORRECT_newcell2ProcGathered[i]+newcell2ProcGathered[i])
      return CORRECT_newcell2ProcGathered
 
-def getNumberVertices(t):
-  if t==4: n=4
-  elif t==8: n=8
-  elif t==15: n=6
-  elif t==16: n=9
-  return n
