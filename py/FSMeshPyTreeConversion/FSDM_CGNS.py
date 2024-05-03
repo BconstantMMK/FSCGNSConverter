@@ -432,6 +432,26 @@ class Converter_FSDM_CGNS:
         self.numpy_cell2node[fs_cell_type] = numpy.int_(element_connectivity_node[1]-1).reshape(nb_current_cell, nb_vertex_per_cell)
     return
 
+  def initUnstructCellsOfType(self,cell_type):
+      has_cells = cell_type in self.numpy_cell2node.keys()
+
+      if has_cells:
+        np_cell2node = self.numpy_cell2node[cell_type]
+        fs_cell2node = FSIntArray(np_cell2node.shape[0],np_cell2node.shape[1])
+      else:
+        fs_cell2node = FSIntArray(0,FSCellInfo.NNodes(cell_type))
+
+      if self.MPI:
+        if has_cells:
+          nNodesPrevious = self.cell2Proc[FSMeshEnums.CT_Node][Cmpi.rank]
+          numpy.copyto(numpy.array(fs_cell2node.Buffer(), copy=False), np_cell2node + nNodesPrevious, casting='unsafe')
+        self.fsmesh.InitUnstructCells(cell_type, self.cell2Proc[cell_type], fs_cell2node, True)
+      else:
+        if has_cells:
+          numpy.copyto(numpy.array(fs_cell2node.Buffer(), copy=False), np_cell2node, casting='unsafe')
+        self.fsmesh.InitUnstructCells(cell_type, fs_cell2node, True)
+      return
+
   def initializeFSMesh(self,z_NCfaces=None):
     #Init mesh number of node
 
@@ -443,26 +463,15 @@ class Converter_FSDM_CGNS:
       self.initializeCell2Proc(FSMeshEnums.CT_Node)
       self.fsmesh.InitUnstructNodes(self.cell2Proc[FSMeshEnums.CT_Node])
 
-      myID   = Cmpi.rank
-      copyData = True
-
       for fs_cell_type in self.fs_cell_types:
-        nNodesPrevious = self.cell2Proc[FSMeshEnums.CT_Node][myID]
         self.initializeCell2Proc(fs_cell_type)
-        if self.nb_vertices != 0 and ((fs_cell_type in FSUnstructSurfaceCellTypes and self.list_names_BCs != []) or fs_cell_type in FSUnstructVolumeCellTypes):
-            fs_cell2node = FSIntArray(self.numpy_cell2node[fs_cell_type].shape[0],self.numpy_cell2node[fs_cell_type].shape[1])
-            numpy.copyto(numpy.array(fs_cell2node.Buffer(), copy=False), self.numpy_cell2node[fs_cell_type]+nNodesPrevious, casting='unsafe')
-            self.fsmesh.InitUnstructCells(fs_cell_type,self.cell2Proc[fs_cell_type],fs_cell2node, True)
-          elif (fs_cell_type in FSUnstructSurfaceCellTypes and self.list_names_BCs == []) or self.nb_vertices == 0:
-            fs_cell2node = FSIntArray(0,FSCellInfo.NNodes(fs_cell_type))
-            self.fsmesh.InitUnstructCells(fs_cell_type,self.cell2Proc[fs_cell_type],fs_cell2node, True)
+        self.initUnstructCellsOfType(fs_cell_type)
+
     else:
       self.fsmesh.InitUnstructNodes(self.nb_vertices)
 
-      for i,fs_cell_type in enumerate(self.fs_cell_types):
-        fs_cell2node = FSIntArray(self.numpy_cell2node[fs_cell_type].shape[0],self.numpy_cell2node[fs_cell_type].shape[1])
-        numpy.copyto(numpy.array(fs_cell2node.Buffer(), copy=False), self.numpy_cell2node[fs_cell_type], casting='unsafe')
-        self.fsmesh.InitUnstructCells(fs_cell_type, fs_cell2node, False)
+      for fs_cell_type in self.fs_cell_types:
+        self.initUnstructCellsOfType(fs_cell_type)
 
     if self.conformal==False:
       if self.MPI==True:
@@ -472,17 +481,8 @@ class Converter_FSDM_CGNS:
 
     self.fsmesh.EndInitialization()
     self.fsmesh.PrintInfo()
+    self.initEmptyDatasetOfCoordinatesBC([FSDataName.Coordinates()],FSMeshEnums.CT_Node)
 
-    coordNames = FSStringArray(3)
-    coordNames[0] = FSDataName.Coordinate().X()
-    coordNames[1] = FSDataName.Coordinate().Y()
-    coordNames[2] = FSDataName.Coordinate().Z()
-
-    coordSpecs = FSDataSpecArray(3)
-    coordSpecs[0].Length()
-    coordSpecs[1].Length()
-    coordSpecs[2].Length()
-    self.fsmesh.InitUnstructDataset(FSDataName.Coordinates(), FSDatasetInfo(coordNames, coordSpecs, FSMeshEnums.CT_Node))
     if self.nb_vertices != 0:
       #We put all the coordinates together to fill the FSFloatArray
       if self.invertPlanesYZ==False:
@@ -711,19 +711,8 @@ class Converter_FSDM_CGNS:
     if self.IBM ==True:
       IBM_boundary_markers = []
       IBM_names = []
-
-      coordNames = FSStringArray(3)
-      coordNames[0] = FSDataName.Coordinate().X()
-      coordNames[1] = FSDataName.Coordinate().Y()
-      coordNames[2] = FSDataName.Coordinate().Z()
-
-      coordSpecs = FSDataSpecArray(3)
-      coordSpecs[0].Length()
-      coordSpecs[1].Length()
-      coordSpecs[2].Length()
       fsdatanames = ["WallPointCoordinates","DonorPointCoordinates"]
-      for fsdataname in fsdatanames:
-        self.fsmesh.InitUnstructDataset(fsdataname, FSDatasetInfo(coordNames, coordSpecs, FSMeshEnums.CT_Quad4))
+      self.initEmptyDatasetOfCoordinatesBC(fsdatanames,FSMeshEnums.CT_Quad4)
 
     for (marker,name) in zip(bc_markers_all,bc_names_all) :
       self.fsmesh.SetCellAttributeValueName(FS_AT_CADGroupID, marker, name)
@@ -743,13 +732,10 @@ class Converter_FSDM_CGNS:
         pointlistIBC = numpy.concatenate([pointlistIBC, self.boundary_marker_to_point_list[IBM_boundary_marker]-self.nb_cells_volume])
 
       self.createDatasetOfCoordinatesBC(self.fsmesh,IBMDataset1, IBMDataset2, IBMDataset3,IBMDatasets[0],self.nb_cells_surface,pointlistIBC)
-    isMeshOK = self.fsmesh.Check()
-    print("meshok",isMeshOK)
 
     return
 
-  def createDatasetOfCoordinatesBC(self,fsmesh,coords_x, coords_y, coords_z,BC_names,nb_cell_surf,point_list):
-    if Cmpi.size == 1:
+  def initEmptyDatasetOfCoordinatesBC(self,BC_names,cell_type):
       coordNames = FSStringArray(3)
       coordNames[0] = FSDataName.Coordinate().X()
       coordNames[1] = FSDataName.Coordinate().Y()
@@ -759,10 +745,14 @@ class Converter_FSDM_CGNS:
       coordSpecs[0].Length()
       coordSpecs[1].Length()
       coordSpecs[2].Length()
-      fsdatanames = ["WallPointCoordinates","DonorPointCoordinates"]
       for fsdataname in BC_names:
-        self.fsmesh.InitUnstructDataset(fsdataname, FSDatasetInfo(coordNames, coordSpecs, FSMeshEnums.CT_Quad4))
+        self.fsmesh.InitUnstructDataset(fsdataname, FSDatasetInfo(coordNames, coordSpecs, cell_type))
 
+      return
+
+
+  def createDatasetOfCoordinatesBC(self,fsmesh,coords_x, coords_y, coords_z,BC_names,nb_cell_surf,point_list):
+    if not self.MPI: self.initEmptyDatasetOfCoordinatesBC(BC_names,FSMeshEnums.CT_Quad4)
     #for i in range(coords_x.shape[0]):
     for i in range(len(coords_x)):
 
@@ -783,7 +773,6 @@ class Converter_FSDM_CGNS:
          dataset[point_list[j]][2] = np_coordinates[j][2]
        fsdataname = FSDataName(BC_names[i])
 
-       #self.fsmesh.InitUnstructDataset(fsdataname, FSDatasetInfo(coordNames, coordSpecs, FSMeshEnums.CT_Quad4))
        Var = self.fsmesh.GetUnstructDataset(fsdataname).GetValues()
        Var.Fill(0.0)
        for elemIndex in range(nb_cell_surf):
@@ -820,9 +809,7 @@ class Converter_FSDM_CGNS:
     if self.nb_vertices != 0:
       if self.conformal==False:
         self.prepareDatasetOfNonConformalFaces()
-        bcs_node = Internal.getNodesFromType(self.pytree,"BC_t")
         z_NCfaces = self.createZoneOfNonConformalFaces()
-        bcs_node = Internal.getNodesFromType(self.pytree,"BC_t")
       self.modifyConnectivityUnstructured()
       self.recoverCoordinatesCGNS()
       self.recoverCGNSConnectivity()
@@ -830,20 +817,17 @@ class Converter_FSDM_CGNS:
     #self.fsmesh.PrintInfo()
     self.initializeFSMesh(z_NCfaces)
 
+    IBMDatasets = None
     if self.nb_vertices != 0:
       if self.IBM==True: self.initIBMDatasets()
       IBMDatasets = self.recoverPointList2BoundaryMarkers()
-    else:
-      IBMDatasets = None
+
     if self.MPI==True:
         self.initBCsFSDMmesh_MPI(IBMDatasets)
+        self.serialDeduplicateNodesFSMesh()
     else:
         self.initBCsFSDMmesh(IBMDatasets)
 
-    if self.MPI==True:
-      self.serialDeduplicateNodesFSMesh()
-
-    #exit("quello che dico io")
     if self.inmemory:
         return self.fsmesh, self.clac
     else:
@@ -1445,17 +1429,7 @@ class Converter_FSDM_CGNS:
           self.fsmesh.InitUnstructCells(t,cell2Proc,fs_cell2node, True)
 
       self.fsmesh.EndInitialization()
-
-      coordNames = FSStringArray(3)
-      coordNames[0] = FSDataName.Coordinate().X()
-      coordNames[1] = FSDataName.Coordinate().Y()
-      coordNames[2] = FSDataName.Coordinate().Z()
-
-      coordSpecs = FSDataSpecArray(3)
-      coordSpecs[0].Length()
-      coordSpecs[1].Length()
-      coordSpecs[2].Length()
-      self.fsmesh.InitUnstructDataset(FSDataName.Coordinates(), FSDatasetInfo(coordNames, coordSpecs, FSMeshEnums.CT_Node))
+      self.initEmptyDatasetOfCoordinatesBC([FSDataName.Coordinates()],FSMeshEnums.CT_Node)
       Var = self.fsmesh.GetUnstructDataset(FSDataName.Coordinates()).GetValues()
       for nodeIndex in range(len(unique_coords)):
           VarIndex = Var.MapIndex(nodeIndex,0)
@@ -1494,8 +1468,8 @@ class Converter_FSDM_CGNS:
                     VarIndex =  Var.MapIndex(elemIndex, 0)
                     Var[VarIndex] = flis_distance[elemIndex]
 
+            self.initEmptyDatasetOfCoordinatesBC(fsdatanames,FSMeshEnums.CT_Quad4)
             for (fsdataname,dataset) in zip(fsdatanames,datasets):
-              self.fsmesh.InitUnstructDataset(fsdataname, FSDatasetInfo(coordNames, coordSpecs, FSMeshEnums.CT_Quad4))#,fs_coordinates)
               Var = self.fsmesh.GetUnstructDataset(fsdataname).GetValues()
               for elemIndex in range(len(cell2NodeDict[4])):
                      VarIndex =    Var.MapIndex(elemIndex, 0)
@@ -2384,4 +2358,6 @@ def initializeCell2ProcOutsideClass(t,clac,i):
      for i in range(nProcs):
        CORRECT_newcell2ProcGathered[i+1] = int(CORRECT_newcell2ProcGathered[i]+newcell2ProcGathered[i])
      return CORRECT_newcell2ProcGathered
+
+#class Converter_FSDM_CGNS_MPI(Converter_FSDM_CGNS):
 
