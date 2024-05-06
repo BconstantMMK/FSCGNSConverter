@@ -261,7 +261,6 @@ class Converter_FSDM_CGNS:
 
       zones = Internal.getZones(self.pytree)
 
-
       z = zones[0]
       for noz in range(novol,len(zones)):
         z = T.join([z,zones[noz]])
@@ -527,7 +526,10 @@ class Converter_FSDM_CGNS:
       quantityNames = FSStringArray(1)
       quantityNames[0] = quantity_name
       quantitySpecs = FSDataSpecArray(1)
-      self.fsmesh.InitUnstructDataset(quantity_name, FSDatasetInfo(quantityNames, quantitySpecs, FSMeshEnums.CT_Hexa8))
+
+      fsarray_volume_cell_types = FSIntArray(len(self.fs_volume_cell_types))
+      numpy.copyto(numpy.array(fsarray_volume_cell_types.Buffer(), copy=False), self.fs_volume_cell_types, casting='unsafe')
+      self.fsmesh.InitUnstructDataset(quantity_name, FSDatasetInfo(quantityNames, quantitySpecs, fsarray_volume_cell_types))
       Var = self.fsmesh.GetUnstructDataset(quantity_name).GetValues()
       for elemIndex in range(self.nb_cells_volume):
               VarIndex =    Var.MapIndex(elemIndex, 0)
@@ -712,7 +714,9 @@ class Converter_FSDM_CGNS:
       IBM_boundary_markers = []
       IBM_names = []
       fsdatanames = ["WallPointCoordinates","DonorPointCoordinates"]
-      self.initEmptyDatasetOfCoordinatesBC(fsdatanames,FSMeshEnums.CT_Quad4)
+      fsarray_surface_cell_types = FSIntArray(len(self.fs_surface_cell_types))
+      numpy.copyto(numpy.array(fsarray_surface_cell_types.Buffer(), copy=False), self.fs_surface_cell_types, casting='unsafe')
+      self.initEmptyDatasetOfCoordinatesBC(fsdatanames,fsarray_surface_cell_types)
 
     for (marker,name) in zip(bc_markers_all,bc_names_all) :
       self.fsmesh.SetCellAttributeValueName(FS_AT_CADGroupID, marker, name)
@@ -742,9 +746,6 @@ class Converter_FSDM_CGNS:
       coordNames[2] = FSDataName.Coordinate().Z()
 
       coordSpecs = FSDataSpecArray(3)
-      coordSpecs[0].Length()
-      coordSpecs[1].Length()
-      coordSpecs[2].Length()
       for fsdataname in BC_names:
         self.fsmesh.InitUnstructDataset(fsdataname, FSDatasetInfo(coordNames, coordSpecs, cell_type))
 
@@ -752,7 +753,10 @@ class Converter_FSDM_CGNS:
 
 
   def createDatasetOfCoordinatesBC(self,fsmesh,coords_x, coords_y, coords_z,BC_names,nb_cell_surf,point_list):
-    if not self.MPI: self.initEmptyDatasetOfCoordinatesBC(BC_names,FSMeshEnums.CT_Quad4)
+    if not self.MPI:
+      fsarray_surface_cell_types = FSIntArray(len(self.fs_surface_cell_types))
+      numpy.copyto(numpy.array(fsarray_surface_cell_types.Buffer(), copy=False), self.fs_surface_cell_types, casting='unsafe')
+      self.initEmptyDatasetOfCoordinatesBC(BC_names,fsarray_surface_cell_types)
     #for i in range(coords_x.shape[0]):
     for i in range(len(coords_x)):
 
@@ -800,6 +804,7 @@ class Converter_FSDM_CGNS:
             ExportCellTypes=surfaceCellTypes) or FSError.PrintAndExit()
 
     self.fsmesh.ExportMeshHDF5(Filename=self.mesh_name.split('.')[0]+".h5") or FSError.PrintAndExit()
+    #self.fsmesh.PrintInfo()
     return
 
   def convertCGNS2FSDM(self):
@@ -883,7 +888,6 @@ class Converter_FSDM_CGNS:
         self.fs_volume_cell_types.append(cell_type)
         if ghostCells == False: self.nb_cells_volume += self.fsmesh.GetNOwnedCells(cell_type)
         else: self.nb_cells_volume += self.fsmesh.GetNCells(cell_type)
-
     return
 
   def recoverCoordinatesFSDM(self):
@@ -1320,11 +1324,13 @@ class Converter_FSDM_CGNS:
     return None
 
   def serialDeduplicateNodesFSMesh(self):
+
+      self.fsmesh.PrintInfo()
       if self.dimPb==2:
         quadNQuad = 15
       else:
         quadNQuad = 16
-      #numpy.hstack([ciao1.reshape(len(ciao1),1),ciao2.reshape(len(ciao2),1),ciao3.reshape(len(ciao3),1)])
+
       node_coordinates = self.fsmesh.GetUnstructDataset("Coordinates").GetValues()
       node_coordinates_numpy = numpy.array(node_coordinates.Buffer(), copy=True)
       myID = self.clac.GetProcID()
@@ -1336,8 +1342,7 @@ class Converter_FSDM_CGNS:
       npSizePerProc = numpy.empty((0), dtype=numpy.dtype('int'))
 
       if myID == 0:
-        print(len(node_coordinates_numpy))
-        print("before sort")
+        print("Sorting coordinates..")
         cmpIdx = lambda a, b : cmp(node_coordinates_numpy[a], node_coordinates_numpy[b])
         idx_sorted = sorted(range(len(node_coordinates_numpy)), key=cmp_to_key(cmpIdx))
 
@@ -1349,7 +1354,7 @@ class Converter_FSDM_CGNS:
         previous = None
         j = -1
 
-        print("before dedup")
+        print("Deduplicating coordinates..")
         for i in range(nnodes_old):
             if i==0 or (abs(previous-node_coordinates_numpy_sorted[i])>1e-9).any():
                 j=j+1
@@ -1367,10 +1372,9 @@ class Converter_FSDM_CGNS:
           npSizePerProc[i] = len(unique_coords)//self.clac.NProcs()
       cell2Proc_nodes = initializeCell2ProcOutsideClass(FSMeshEnums.CT_Node,self.clac,unique_coords)
       dup2dedup = ArrayOps.Broadcast(dup2dedup,self.clac)
-
+      fs_cell_types_NC = self.fs_cell_types if self.conformal else self.fs_cell_types + [quadNQuad]
       cell2NodeDict = {}
-      for t in [4,8,quadNQuad]:
-        print(t)
+      for t in fs_cell_types_NC:
         cell2Node = self.fsmesh.GetCell2Node(t)
         cell2Node_numpy = numpy.array(cell2Node.Buffer(), copy=True)
         cell2Node_numpy = ArrayOps.Gather(cell2Node_numpy,self.clac)
@@ -1382,19 +1386,37 @@ class Converter_FSDM_CGNS:
 
       fs_boundary_marker_list = self.fsmesh.GetCellAttributeValuesWithNames("CADGroupID")
       np_boundary_marker_list = numpy.array(fs_boundary_marker_list.Buffer(),copy=True)
+
+      np_markers_celltype_dict = {}
+      length = 0
+      lengthdict = 0
       if self.nb_vertices > 0:
-        fs_markers_array_cell_type = self.fsmesh.GetCellAttribute("CADGroupID",4)
-        np_markers_array_cell_type = numpy.array(fs_markers_array_cell_type.Buffer(),copy=True)
+        for cell_type in self.fs_surface_cell_types:
+          fs_markers_array_cell_type = self.fsmesh.GetCellAttribute("CADGroupID",cell_type)
+          np_markers_array_cell_type = numpy.array(fs_markers_array_cell_type.Buffer(),copy=True)
+          length += len(np_markers_array_cell_type)
+          np_markers_celltype_dict[cell_type] = np_markers_array_cell_type
+          lengthdict += len(np_markers_celltype_dict[cell_type])
       else:
         np_markers_array_cell_type = numpy.empty(0)
-
+      #print(length)
+      #print("final",sum(Cmpi.allgather(length)))
+      #print("final dict",sum(Cmpi.allgather(lengthdict)))
       np_boundary_marker_list = ArrayOps.Gather(np_boundary_marker_list,self.clac)
       np_markers_array_cell_type = ArrayOps.Gather(np_markers_array_cell_type,self.clac)
+      np_markers_celltype_dict_gath = Cmpi.gather(np_markers_celltype_dict)
+      #lengthdict = 0
+      #if Cmpi.rank == 0:
+      #  lengthdict = 0
+      #  for proc_contr in np_markers_celltype_dict_gath:
+      #    for key in proc_contr.keys():
+      #      lengthdict += len(proc_contr[key])
 
-      if myID==0:
-        names = []
-        for marker in fs_boundary_marker_list:
-          names.append(self.fsmesh.GetCellAttributeValueName("CADGroupID", marker))
+      #print("final after",sum(Cmpi.allgather(lengthdict)))
+      #exit()
+
+
+
 
       if self.IBM:
         if self.nb_vertices > 0:
@@ -1415,11 +1437,11 @@ class Converter_FSDM_CGNS:
 
             dataset = ArrayOps.Gather(dataset,self.clac)
             if myID==0: datasets.append(dataset)
-      self.fsmesh.Reset()
 
+      self.fsmesh.Reset()
       self.fsmesh.BeginInitialization()
       self.fsmesh.InitUnstructNodes(cell2Proc_nodes)
-      for t in [4,8,quadNQuad]:
+      for t in fs_cell_types_NC:
           if Cmpi.rank==0:
             fs_cell2node = FSIntArray(cell2NodeDict[t].shape[0],cell2NodeDict[t].shape[1])
           else: fs_cell2node = FSIntArray(0,FSCellInfo.NNodes(t))
@@ -1439,39 +1461,72 @@ class Converter_FSDM_CGNS:
           VarIndex = Var.MapIndex(nodeIndex,2)
           Var[VarIndex] = unique_coords[nodeIndex][2]
 
-      fs_markers_array_cell_type = FSIntArray(len(np_markers_array_cell_type))
-      for i in range(len(np_markers_array_cell_type)):
-          fs_markers_array_cell_type[i] = int(np_markers_array_cell_type[i])
+      self.nb_cells_surface = 0
+      self.nb_cells_volume = 0
+      self.fs_volume_cell_types = []
+      self.fs_surface_cell_types = []
+      self.recoverInfoMeshFSDM(ghostCells=False)
 
-      fs_boundary_marker_list = FSIntArray(len(np_boundary_marker_list))
-      for i in range(len(np_boundary_marker_list)):
-          fs_boundary_marker_list[i] = int(np_boundary_marker_list[i])
+      ##print(Cmpi.gather(Cmpi.rank))
+      #print(np_markers_celltype_dict)
+
+      #raise ValueError("hello")
+      #exit()
 
       if myID==0:
+        length = 0
+        np_markers_celltype_dict = {}
+        for proc_dict in np_markers_celltype_dict_gath:
+            for key in proc_dict.keys():
+                if key in np_markers_celltype_dict:
+                    np_markers_celltype_dict[key] = numpy.concatenate([np_markers_celltype_dict[key],proc_dict[key]])
+                    length += len(proc_dict[key])
+                else:
+                    np_markers_celltype_dict[key] = proc_dict[key]
+
+        fs_markers_celltype_dict = {}
+        for cell_type in self.fs_surface_cell_types:
+          fs_markers_array_cell_type = FSIntArray(len(np_markers_array_cell_type))
+          for i in range(len(np_markers_array_cell_type)):
+              fs_markers_array_cell_type[i] = int(np_markers_array_cell_type[i])
+          fs_markers_celltype_dict[cell_type] = fs_markers_array_cell_type
+
+        fs_boundary_marker_list = FSIntArray(len(np_boundary_marker_list))
+        for i in range(len(np_boundary_marker_list)):
+            fs_boundary_marker_list[i] = int(np_boundary_marker_list[i])
+
+        names = []
+        for marker in fs_boundary_marker_list:
+          names.append(self.fsmesh.GetCellAttributeValueName("CADGroupID", marker))
+
         for (name,marker) in zip(names,fs_boundary_marker_list):
           self.fsmesh.SetCellAttributeValueName(FS_AT_CADGroupID, marker, name)
-        self.fsmesh.InitCellAttribute(FS_AT_CADGroupID, 4, fs_markers_array_cell_type)
-
-      if self.IBM:
-          if myID==0:
-            flis_distance = FSFloatArray(len(np_flis_distance))
-            for i in range(len(np_flis_distance)):
+        for cell_type in self.fs_surface_cell_types:
+          self.fsmesh.InitCellAttribute(FS_AT_CADGroupID, cell_type, fs_markers_celltype_dict[cell_type])
+        if self.IBM:
+            flis_distance = FSFloatArray(self.nb_cells_volume)
+            for i in range(self.nb_cells_volume):
                flis_distance[i] = float(np_flis_distance[i])
             quantity_name = "FlisWallDistance"
             quantityNames = FSStringArray(1)
             quantityNames[0] = quantity_name
             quantitySpecs = FSDataSpecArray(1)
-            self.fsmesh.InitUnstructDataset(quantity_name, FSDatasetInfo(quantityNames, quantitySpecs, FSMeshEnums.CT_Hexa8))
+            print(self.IBM,self.fs_volume_cell_types)
+            fsarray_volume_cell_types = FSIntArray(len(self.fs_volume_cell_types))
+            numpy.copyto(numpy.array(fsarray_volume_cell_types.Buffer(), copy=False), self.fs_volume_cell_types, casting='unsafe')
 
+            self.fsmesh.InitUnstructDataset(quantity_name, FSDatasetInfo(quantityNames, quantitySpecs, fsarray_volume_cell_types))
             Var = self.fsmesh.GetUnstructDataset(quantity_name).GetValues()
-            for elemIndex in range(len(cell2NodeDict[8])):
+            for elemIndex in range(self.nb_cells_volume):
                     VarIndex =  Var.MapIndex(elemIndex, 0)
                     Var[VarIndex] = flis_distance[elemIndex]
+            fsarray_surface_cell_types = FSIntArray(len(self.fs_surface_cell_types))
+            numpy.copyto(numpy.array(fsarray_surface_cell_types.Buffer(), copy=False), self.fs_surface_cell_types, casting='unsafe')
 
-            self.initEmptyDatasetOfCoordinatesBC(fsdatanames,FSMeshEnums.CT_Quad4)
+            self.initEmptyDatasetOfCoordinatesBC(fsdatanames,fsarray_surface_cell_types)
             for (fsdataname,dataset) in zip(fsdatanames,datasets):
               Var = self.fsmesh.GetUnstructDataset(fsdataname).GetValues()
-              for elemIndex in range(len(cell2NodeDict[4])):
+              for elemIndex in range(self.nb_cells_surface):
                      VarIndex =    Var.MapIndex(elemIndex, 0)
                      Var[VarIndex] = dataset[elemIndex][0]
                      VarIndex =    Var.MapIndex(elemIndex, 1)
