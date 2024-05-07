@@ -791,6 +791,7 @@ class Converter_FSDM_CGNS:
             ExportCellTypes=surfaceCellTypes) or FSError.PrintAndExit()
 
     self.fsmesh.ExportMeshHDF5(Filename=self.mesh_name.split('.')[0]+".h5") or FSError.PrintAndExit()
+
     return None
 
   def convertCGNS2FSDM(self):
@@ -1367,22 +1368,41 @@ class Converter_FSDM_CGNS:
 
       fs_boundary_marker_list = self.fsmesh.GetCellAttributeValuesWithNames("CADGroupID")
       np_boundary_marker_list = numpy.array(fs_boundary_marker_list.Buffer(),copy=True)
-
       np_markers_celltype_dict = {}
-      length = 0
-      lengthdict = 0
       if self.nb_vertices > 0:
         for cell_type in self.fs_surface_cell_types:
           fs_markers_array_cell_type = self.fsmesh.GetCellAttribute("CADGroupID",cell_type)
           np_markers_array_cell_type = numpy.array(fs_markers_array_cell_type.Buffer(),copy=True)
-          length += len(np_markers_array_cell_type)
           np_markers_celltype_dict[cell_type] = np_markers_array_cell_type
-          lengthdict += len(np_markers_celltype_dict[cell_type])
       else:
         np_markers_array_cell_type = numpy.empty(0)
       np_boundary_marker_list = ArrayOps.Gather(np_boundary_marker_list,self.clac)
       np_markers_array_cell_type = ArrayOps.Gather(np_markers_array_cell_type,self.clac)
       np_markers_celltype_dict_gath = Cmpi.gather(np_markers_celltype_dict)
+
+      if myID==0:
+        np_markers_celltype_dict = {}
+        for proc_dict in np_markers_celltype_dict_gath:
+            for key in proc_dict.keys():
+                if key in np_markers_celltype_dict:
+                    np_markers_celltype_dict[key] = numpy.concatenate([np_markers_celltype_dict[key],proc_dict[key]])
+                else:
+                    np_markers_celltype_dict[key] = proc_dict[key]
+
+        fs_markers_celltype_dict = {}
+        for cell_type in self.fs_surface_cell_types:
+          fs_markers_array_cell_type = FSIntArray(len(np_markers_array_cell_type))
+          for i in range(len(np_markers_array_cell_type)):
+              fs_markers_array_cell_type[i] = int(np_markers_array_cell_type[i])
+          fs_markers_celltype_dict[cell_type] = fs_markers_array_cell_type
+
+        fs_boundary_marker_list = FSIntArray(len(np_boundary_marker_list))
+        for i in range(len(np_boundary_marker_list)):
+            fs_boundary_marker_list[i] = int(np_boundary_marker_list[i])
+
+        names = []
+        for marker in fs_boundary_marker_list:
+          names.append(self.fsmesh.GetCellAttributeValueName("CADGroupID", marker))
 
       if self.IBM:
         if self.nb_vertices > 0:
@@ -1434,31 +1454,6 @@ class Converter_FSDM_CGNS:
       self.recoverInfoMeshFSDM(ghostCells=False)
 
       if myID==0:
-        length = 0
-        np_markers_celltype_dict = {}
-        for proc_dict in np_markers_celltype_dict_gath:
-            for key in proc_dict.keys():
-                if key in np_markers_celltype_dict:
-                    np_markers_celltype_dict[key] = numpy.concatenate([np_markers_celltype_dict[key],proc_dict[key]])
-                    length += len(proc_dict[key])
-                else:
-                    np_markers_celltype_dict[key] = proc_dict[key]
-
-        fs_markers_celltype_dict = {}
-        for cell_type in self.fs_surface_cell_types:
-          fs_markers_array_cell_type = FSIntArray(len(np_markers_array_cell_type))
-          for i in range(len(np_markers_array_cell_type)):
-              fs_markers_array_cell_type[i] = int(np_markers_array_cell_type[i])
-          fs_markers_celltype_dict[cell_type] = fs_markers_array_cell_type
-
-        fs_boundary_marker_list = FSIntArray(len(np_boundary_marker_list))
-        for i in range(len(np_boundary_marker_list)):
-            fs_boundary_marker_list[i] = int(np_boundary_marker_list[i])
-
-        names = []
-        for marker in fs_boundary_marker_list:
-          names.append(self.fsmesh.GetCellAttributeValueName("CADGroupID", marker))
-
         for (name,marker) in zip(names,fs_boundary_marker_list):
           self.fsmesh.SetCellAttributeValueName(FS_AT_CADGroupID, marker, name)
         for cell_type in self.fs_surface_cell_types:
