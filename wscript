@@ -145,7 +145,7 @@ def _getRegistry(filename=None):
 def options(opt):
     opt.load('compiler_cxx python')
 
-    from distutils.util import get_platform
+    from sysconfig import get_platform
     platform = get_platform().replace('/', '_')
     defaultRegistry = os.path.join('config', platform + '.ini')
     # debug information
@@ -229,7 +229,12 @@ def configure(conf):
     conf.env.DEFINES = defs
     if conf.options.enable_swig:  # we only keep the Python defines if we actually want them
         conf.env.DEFINES_PYEXT += pyDefs
-        
+
+    # debug information
+    if conf.options.debug:
+        conf.env.append_unique('CXXFLAGS', '-g')
+        conf.env.append_unique('LINKFLAGS', '-g')
+
     # our recipe's configure (which we run before our tests because it might add flags / settings)
     if hasattr(br, 'configure'):
         br.configure(conf)
@@ -429,23 +434,22 @@ def configure(conf):
 
             if swigVersion < (4, 0, 0):
                 swigArgs += ['-modern']
-            elif swigVersion >= (4, 0, 1):
+
+            if swigVersion >= (4, 0, 1):
                 # generate Python docstrings for swig-wrapped methods for swig 4.0.1+
                 # at version 4.0.1 swig's doxygen parser fails at parsing some param[FOO] statements
                 # disable the warning message associated with it
                 swigArgs += ['-doxygen', '-w560']
 
-            # waf stores the python version as MAJOR.MINOR in a string, e.g. '3.7'
-            pythonVersion = (int(conf.env.PYTHON_VERSION[0]), int(conf.env.PYTHON_VERSION[2]))
-            if pythonVersion >= (3, 0):
-                swigArgs += ['-py3']
+            if swigVersion < (4, 1, 0):
+                swigArgs += ['-py3'] # deprecated since 4.1.0
 
         conf.env.SWIG_ARGS = swigArgs
 
         # the shared objects should go into the same installation folder as the modules, e.g. for FSPlugin
         # ${PREFIX}/lib/pythonX.Y/site-packages/FSPlugin/fsplugin.so
         # for backward compatibility, the FSDataManager.so is installed in ${PREFIX}/lib/pythonX.Y/site-packages/
-        conf.env.python_extension_directory = conf.env.PYTHONARCHDIR + '/' + (br.APPNAME + '/' if br.APPNAME != 'FSDM' else '')
+        conf.env.python_extension_directory = conf.env.PYTHONDIR + '/' + (br.APPNAME + '/' if br.APPNAME != 'FSDM' else '')
 
     conf.env.enable_swig = conf.options.enable_swig  # propagate the option for the build
 
@@ -494,10 +498,7 @@ def _register(ctx):
                     v = ds[-1]
                 defs[k] = v
 
-                if k.startswith(_DefinePrefix):
-                    name = k[len(_DefinePrefix):].lower()
-                    if name not in uses:
-                        uses.append(name)
+                uses.append(k[len(_DefinePrefix):].lower())
 
             if defs:
                 p[fsconfig.DEFS] = defs
@@ -509,6 +510,9 @@ def _register(ctx):
                 p[fsconfig.LIBS] = list(br.SharedLibraries.keys())
                 p[fsconfig.LIBPATHS] = [ctx.env.LIBDIR]
                 p[fsconfig.INCPATHS] = [os.path.join(ctx.env.PREFIX, 'include', m) for m in br.SharedLibraries]
+
+                if getattr(br, 'THIRD_PARTY_BASE', None):
+                  p[fsconfig.INCPATHS].append(os.path.join(ctx.env.PREFIX, 'include', getattr(br, 'THIRD_PARTY_BASE')))
 
             # python path
             if (ctx.options.enable_swig and ctx.env.enable_swig) or getattr(br, 'PythonModules', []):
@@ -547,6 +551,10 @@ Requires: {REQUIRES}
     libs += ['-L{}'.format(bld.env['LIBDIR'])]
     libs += ['-l{}'.format(lib) for lib in getattr(br, 'SharedLibraries', {}).keys()]
     includes += [r'-I${prefix}/include/' + lib for lib in getattr(br, 'SharedLibraries', {}).keys()]
+
+    if getattr(br, 'THIRD_PARTY_BASE', None):
+        includes += [r'-I${prefix}/include/' + getattr(br, 'THIRD_PARTY_BASE')]
+
     cflags += ['-D' + define for define in bld.env.DEFINES] + includes
 
     fileContent = pkgConfigFileTemplate.format(APPDESC=APPDESC, APPNAME=APPNAME.lower(), VERSION=VERSION,
@@ -564,8 +572,13 @@ def build(bld):
     # doxygen
     if bld.env.enable_doxygen and bld.options.enable_doxygen:
         for df in getattr(br, 'DoxygenConfigs', []):
-            installPath = '${PREFIX}/doc/' + os.path.basename(os.path.splitext(df)[0])
-            bld(features='doxygen', doxyfile=df, install_path=installPath)
+            # when installing into the same prefix, the name of the library should be included => add APPNAME
+            installPath = '${PREFIX}/share/doc/' + APPNAME + '/cpp/' + os.path.basename(os.path.splitext(df)[0])
+            pars = {}
+            if hasattr(br, 'VERSION'):
+                pars['PROJECT_NUMBER'] = getattr(br, 'VERSION')
+
+            bld(features='doxygen', doxyfile=df, install_path=installPath, pars=pars)
 
     configIncludes = []
     configHeader = getattr(br, 'ConfigHeader', None)
@@ -592,8 +605,14 @@ def build(bld):
     if bld.env.enable_swig and bld.options.enable_swig:
         for m in getattr(br, 'PythonBindings', []):
             interface = bld.path.find_node(m + '/include/_' + m + '.i')
-            extName = 'py' + '/' + br.APPNAME + '/_' + m
-            bld(target=extName, features='cxx cxxshlib pyext', source=interface, swig_flags=' '.join(bld.env.SWIG_ARGS),
+            if interface is None:
+                Log.fatal("Could not find interface file for Python extension " + m)
+
+            extName = 'py' + '/' + (br.APPNAME + '/' if br.APPNAME != 'FSDM' else '') + '_' + m
+            targetNode = bld.path.find_or_declare(extName)
+
+            bld(target=extName, features='cxx cxxshlib pyext', source=interface,
+                swig_flags=' '.join(bld.env.SWIG_ARGS  + ['-outdir', targetNode.get_bld().parent.relpath()]),
                 use=[m], install_path=bld.env.python_extension_directory)
 
     # add the function for registering ourselves with fsconfig when we install
@@ -615,6 +634,11 @@ def build(bld):
         pyFiles = pydir.ant_glob('**/*.py')
         if pyFiles:
             bld(features='py', source=pyFiles, install_from=pydir)
+        # link all files of the pydir into the build folder to ensure that it can be used as installation
+        for file in pydir.ant_glob('**/*'):
+            # use the relative path from the source to the target to allow for nested Python packages
+            bld(rule="ln -sf ${SRC[0].path_from(tsk.outputs[0].parent)} ${TGT}", source=file, target=file.get_bld(),
+                shell=False)
 
     # install the swig generated python-files (which are not automatically installed)
     if bld.env.enable_swig and bld.options.enable_swig:
@@ -622,12 +646,18 @@ def build(bld):
         bld.add_group()
 
         for m in getattr(br, 'PythonBindings', []):
-            pyfile = bld.path.find_or_declare(m + '/include/' + m + '.py')
+            pyfile = bld.path.get_bld().find_or_declare('py' + '/' + (br.APPNAME + '/' if br.APPNAME != 'FSDM' else '') + '/' + m + '.py')
+
             # install into prefix Python site-packages folder using the name of the plugin as module name
             bld(features='py', source=pyfile, install_from=pyfile.parent, install_path=bld.env.python_extension_directory)
 
     # install the pkgconfig
     bld.install_files('${LIBDIR}/pkgconfig', [_OutputPkgConfigFile])
+
+    # Generate the Python documentation if requested
+    if hasattr(br, 'pydoc') and (bld.cmd in ('pydoc', 'install')):
+        bld.add_group()  # ensure that everything is correctly built before generating the Python documentation
+        br.pydoc(bld)
 
 
 # Definition of the custom 'test' command which
@@ -638,3 +668,16 @@ class Test(Build.BuildContext):
     # As we define no handling function and inherit from BuildContext,
     # the build function is called and takes care of building / executing the tests.
     cmd = 'test'
+
+
+def pydoc(ctx):
+    """builds source and documentation"""
+
+    commands = ['build', 'pydoc']
+    Options.commands = commands + Options.commands
+
+
+class PyDoc(Build.BuildContext):
+    """builds the source code documentation."""
+
+    cmd = 'pydoc'
