@@ -818,6 +818,7 @@ class Converter_FSDM_CGNS:
         self.serialDeduplicateNodesFSMesh()
     else:
         self.initBCsFSDMmesh(IBMDatasets)
+        self.testDeduplicateNodesFSMesh()
 
     if self.inmemory:
         return self.fsmesh, self.clac
@@ -1305,6 +1306,186 @@ class Converter_FSDM_CGNS:
     if bndType == 'Abutting1to1':
       info[2].append(["UserDefined", zdnrName, [], 'UserDefinedData_t'])
     return None
+
+  def testDeduplicateNodesFSMesh(self):
+
+      if self.dimPb==2:
+        quadNQuad = 15
+      else:
+        quadNQuad = 16
+
+      node_coordinates = self.fsmesh.GetUnstructDataset("Coordinates").GetValues()
+      node_coordinates_numpy = numpy.array(node_coordinates.Buffer(), copy=True)
+      myID = self.clac.GetProcID()
+
+      unique_coords = numpy.empty((0,3))
+      dup2dedup = numpy.empty((0),dtype=int)
+      npSizePerProc = numpy.empty((0), dtype=numpy.dtype('int'))
+
+      if myID == 0:
+        print("Sorting coordinates..")
+        cmpIdx = lambda a, b : cmp(node_coordinates_numpy[a], node_coordinates_numpy[b])
+        idx_sorted = sorted(range(len(node_coordinates_numpy)), key=cmp_to_key(cmpIdx))
+
+        nnodes_old = len(node_coordinates_numpy)
+
+        node_coordinates_numpy_sorted = node_coordinates_numpy[idx_sorted]
+        unique_coords = numpy.empty((nnodes_old,3))
+        dup2dedup = numpy.empty((nnodes_old),dtype=int)
+        previous = None
+        j = -1
+
+        print("Deduplicating coordinates..")
+        for i in range(nnodes_old):
+            if i==0 or (abs(previous-node_coordinates_numpy_sorted[i])>1e-9).any():
+                j=j+1
+                unique_coords[j] = node_coordinates_numpy_sorted[i]
+                previous = node_coordinates_numpy_sorted[i]
+                dup2dedup[idx_sorted[i]] = j
+            else:
+                dup2dedup[idx_sorted[i]] = j
+
+        unique_coords.resize((j+1,3))
+
+        nnodes_new = j+1
+        npSizePerProc = numpy.zeros(self.clac.NProcs(), dtype=numpy.dtype('int'))
+        for i in range(self.clac.NProcs()):
+          npSizePerProc[i] = len(unique_coords)//self.clac.NProcs()
+      dup2dedup = ArrayOps.Broadcast(dup2dedup,self.clac)
+      fs_cell_types_NC = self.fs_cell_types if self.conformal else self.fs_cell_types + [quadNQuad]
+      cell2NodeDict = {}
+      for t in fs_cell_types_NC:
+        cell2Node = self.fsmesh.GetCell2Node(t)
+        cell2Node_numpy = numpy.array(cell2Node.Buffer(), copy=True)
+        cell2Node_numpy = ArrayOps.Gather(cell2Node_numpy,self.clac)
+        if myID==0:
+          for i in range(len(cell2Node_numpy)):
+            cell2Node_numpy[i] = dup2dedup[cell2Node_numpy[i]]
+          cell2NodeDict[t] = cell2Node_numpy
+        else: cell2NodeDict[t] = numpy.empty((0,FSCellInfo.NNodes(t)))
+
+      fs_boundary_marker_list = self.fsmesh.GetCellAttributeValuesWithNames("CADGroupID")
+      np_boundary_marker_list = numpy.array(fs_boundary_marker_list.Buffer(),copy=True)
+      np_markers_celltype_dict = {}
+      if self.nb_vertices > 0:
+        for cell_type in self.fs_surface_cell_types:
+          fs_markers_array_cell_type = self.fsmesh.GetCellAttribute("CADGroupID",cell_type)
+          np_markers_array_cell_type = numpy.array(fs_markers_array_cell_type.Buffer(),copy=True)
+          np_markers_celltype_dict[cell_type] = np_markers_array_cell_type
+      else:
+        np_markers_array_cell_type = numpy.empty(0)
+      np_boundary_marker_list = ArrayOps.Gather(np_boundary_marker_list,self.clac)
+      np_markers_array_cell_type = ArrayOps.Gather(np_markers_array_cell_type,self.clac)
+      np_markers_celltype_dict_gath = Cmpi.gather(np_markers_celltype_dict)
+
+      if myID==0:
+        np_markers_celltype_dict = {}
+        for proc_dict in np_markers_celltype_dict_gath:
+            for key in proc_dict.keys():
+                if key in np_markers_celltype_dict:
+                    np_markers_celltype_dict[key] = numpy.concatenate([np_markers_celltype_dict[key],proc_dict[key]])
+                else:
+                    np_markers_celltype_dict[key] = proc_dict[key]
+
+        fs_markers_celltype_dict = {}
+        for cell_type in self.fs_surface_cell_types:
+          fs_markers_array_cell_type = FSIntArray(len(np_markers_array_cell_type))
+          for i in range(len(np_markers_array_cell_type)):
+              fs_markers_array_cell_type[i] = int(np_markers_array_cell_type[i])
+          fs_markers_celltype_dict[cell_type] = fs_markers_array_cell_type
+
+        fs_boundary_marker_list = FSIntArray(len(np_boundary_marker_list))
+        for i in range(len(np_boundary_marker_list)):
+            fs_boundary_marker_list[i] = int(np_boundary_marker_list[i])
+
+        names = []
+        for marker in fs_boundary_marker_list:
+          names.append(self.fsmesh.GetCellAttributeValueName("CADGroupID", marker))
+
+      if self.IBM:
+        if self.nb_vertices > 0:
+            flis_distance = self.fsmesh.GetUnstructDataset("FlisWallDistance").GetValues()
+            np_flis_distance = numpy.array(flis_distance.Buffer(), copy=True)
+        else:
+            np_flis_distance = numpy.empty(0)
+        np_flis_distance = ArrayOps.Gather(np_flis_distance,self.clac)
+
+        fsdatanames = ["WallPointCoordinates","DonorPointCoordinates"]
+
+        datasets = []
+        for fsdataname in fsdatanames:
+            if self.nb_vertices > 0:
+              dataset = numpy.array(self.fsmesh.GetUnstructDataset(fsdataname).GetValues().Buffer(),copy=True)
+            else:
+              dataset = numpy.empty(0)
+
+            dataset = ArrayOps.Gather(dataset,self.clac)
+            if myID==0: datasets.append(dataset)
+
+      self.fsmesh.Reset()
+      self.fsmesh.BeginInitialization()
+      self.fsmesh.InitUnstructNodes(self.nb_vertices)
+      for t in fs_cell_types_NC:
+          if Cmpi.rank==0:
+            fs_cell2node = FSIntArray(cell2NodeDict[t].shape[0],cell2NodeDict[t].shape[1])
+          else: fs_cell2node = FSIntArray(0,FSCellInfo.NNodes(t))
+
+          numpy.copyto(numpy.array(fs_cell2node.Buffer(), copy=False), cell2NodeDict[t], casting='unsafe')
+          self.fsmesh.InitUnstructCells(t,fs_cell2node, True)
+
+      self.fsmesh.EndInitialization()
+      self.initEmptyDatasetOfCoordinatesBC([FSDataName.Coordinates()],FSMeshEnums.CT_Node)
+      Var = self.fsmesh.GetUnstructDataset(FSDataName.Coordinates()).GetValues()
+      for nodeIndex in range(len(unique_coords)):
+          VarIndex = Var.MapIndex(nodeIndex,0)
+          Var[VarIndex] = unique_coords[nodeIndex][0]
+          VarIndex = Var.MapIndex(nodeIndex,1)
+          Var[VarIndex] = unique_coords[nodeIndex][1]
+          VarIndex = Var.MapIndex(nodeIndex,2)
+          Var[VarIndex] = unique_coords[nodeIndex][2]
+
+      self.nb_cells_surface = 0
+      self.nb_cells_volume = 0
+      self.fs_volume_cell_types = []
+      self.fs_surface_cell_types = []
+      self.recoverInfoMeshFSDM(ghostCells=False)
+
+      if myID==0:
+        for (name,marker) in zip(names,fs_boundary_marker_list):
+          self.fsmesh.SetCellAttributeValueName(FS_AT_CADGroupID, marker, name)
+        for cell_type in self.fs_surface_cell_types:
+          self.fsmesh.InitCellAttribute(FS_AT_CADGroupID, cell_type, fs_markers_celltype_dict[cell_type])
+        if self.IBM:
+            flis_distance = FSFloatArray(self.nb_cells_volume)
+            for i in range(self.nb_cells_volume):
+               flis_distance[i] = float(np_flis_distance[i])
+            quantity_name = "FlisWallDistance"
+            quantityNames = FSStringArray(1)
+            quantityNames[0] = quantity_name
+            quantitySpecs = FSDataSpecArray(1)
+            fsarray_volume_cell_types = FSIntArray(len(self.fs_volume_cell_types))
+            numpy.copyto(numpy.array(fsarray_volume_cell_types.Buffer(), copy=False), self.fs_volume_cell_types, casting='unsafe')
+
+            self.fsmesh.InitUnstructDataset(quantity_name, FSDatasetInfo(quantityNames, quantitySpecs, fsarray_volume_cell_types))
+            Var = self.fsmesh.GetUnstructDataset(quantity_name).GetValues()
+            for elemIndex in range(self.nb_cells_volume):
+                    VarIndex =  Var.MapIndex(elemIndex, 0)
+                    Var[VarIndex] = flis_distance[elemIndex]
+            fsarray_surface_cell_types = FSIntArray(len(self.fs_surface_cell_types))
+            numpy.copyto(numpy.array(fsarray_surface_cell_types.Buffer(), copy=False), self.fs_surface_cell_types, casting='unsafe')
+
+            self.initEmptyDatasetOfCoordinatesBC(fsdatanames,fsarray_surface_cell_types)
+            for (fsdataname,dataset) in zip(fsdatanames,datasets):
+              Var = self.fsmesh.GetUnstructDataset(fsdataname).GetValues()
+              for elemIndex in range(self.nb_cells_surface):
+                     VarIndex =    Var.MapIndex(elemIndex, 0)
+                     Var[VarIndex] = dataset[elemIndex][0]
+                     VarIndex =    Var.MapIndex(elemIndex, 1)
+                     Var[VarIndex] = dataset[elemIndex][1]
+                     VarIndex =    Var.MapIndex(elemIndex, 2)
+                     Var[VarIndex] = dataset[elemIndex][2]
+
+      return
 
   def serialDeduplicateNodesFSMesh(self):
 
