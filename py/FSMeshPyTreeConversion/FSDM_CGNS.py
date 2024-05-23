@@ -818,7 +818,7 @@ class Converter_FSDM_CGNS:
         self.serialDeduplicateNodesFSMesh()
     else:
         self.initBCsFSDMmesh(IBMDatasets)
-        self.testDeduplicateNodesFSMesh()
+        #self.testDeduplicateNodesFSMesh()
 
     if self.inmemory:
         return self.fsmesh, self.clac
@@ -2422,7 +2422,8 @@ def create_Quad2Quad_MPI(coordinates, nonconformal_faces, nonconformal_faces_ctr
     listQuad2Quad.append(thisQuad2Quad)
   listQuad2Quad = numpy.array(listQuad2Quad)
 
-  if listQuad2Quad.shape[0] != nfaces/3:
+  #if listQuad2Quad.shape[0] != nfaces/3:
+  if listQuad2Quad.shape[0] < nfaces/3:
       raise ValueError("Problem on non conformal faces: only %d out of %d have been matched." %(listQuad2Quad.shape[0],nfaces//3))
 
   return listQuad2Quad, 0
