@@ -301,12 +301,18 @@ class Converter_FSDM_CGNS:
 
   def recoverInfoMeshCGNS(self):
     #Import mesh
+
     if Cmpi.size == 1:
         self.MPI=False
-        self.pytree = C.convertFile2PyTree(self.mesh_name)
-    elif Cmpi.size > 1:
+    else:
         self.MPI=True
+
+    if isinstance(self.mesh_name, str) and self.MPI:
         self.pytree = Cmpi.convertFile2PyTree(self.mesh_name,proc=Cmpi.rank)
+    elif isinstance(self.mesh_name, str) and not self.MPI:
+        self.pytree = C.convertFile2PyTree(self.mesh_name)
+    elif not isinstance(self.mesh_name, str):
+        self.pytree = self.mesh_name
 
     base = Internal.getBases(self.pytree)[0]
 
@@ -782,15 +788,19 @@ class Converter_FSDM_CGNS:
       print("FSMESH successfully created")
     else:
       print("WARNING : An error was found in the fsmesh check....")
+    if isinstance(self.mesh_name,str):
+        mesh_name = self.mesh_name.split('.')[0]
+    else:
+        mesh_name = "t"
     volumeCellTypes = tuple(FSMeshEnums.CellTypeToString(x) for x in FSUnstructVolumeCellTypes)
-    self.fsmesh.ExportMeshTECPLOT(Filename=self.mesh_name.split('.')[0]+"_vol.tp", PrefixDatasetName=True,  ExportCellTypes=volumeCellTypes) or FSError.PrintAndExit()
+    self.fsmesh.ExportMeshTECPLOT(Filename=mesh_name+"_vol.tp", PrefixDatasetName=True,  ExportCellTypes=volumeCellTypes) or FSError.PrintAndExit()
 
     surfaceCellTypes = tuple(FSMeshEnums.CellTypeToString(x) for x in FSUnstructSurfaceCellTypes)
-    self.fsmesh.ExportMeshTECPLOT(Filename=self.mesh_name.split('.')[0]+"_surf.tp", PrefixDatasetName=True, ZonePerCellAttributeValue=True,
+    self.fsmesh.ExportMeshTECPLOT(Filename=mesh_name+"_surf.tp", PrefixDatasetName=True, ZonePerCellAttributeValue=True,
             CellAttribute=FS_AT_CADGroupID, UseCellAttributeValueName=True,
             ExportCellTypes=surfaceCellTypes) or FSError.PrintAndExit()
 
-    self.fsmesh.ExportMeshHDF5(Filename=self.mesh_name.split('.')[0]+".h5") or FSError.PrintAndExit()
+    self.fsmesh.ExportMeshHDF5(Filename=mesh_name+".h5") or FSError.PrintAndExit()
 
     return None
 
@@ -2461,7 +2471,7 @@ def create_Quad4Quad(coordinates, nonconformal_faces, nonconformal_faces_ctr,tol
   for point8 in ids_points8:
     match_nonconformal_faces = node2cell_list[point8][1:]
     if len(match_nonconformal_faces)!=4:
-        print("Something is off. {} non conformal faces match this hanging point at {}. 4 non conformal faces should match (Quad4Quad)".format(len(match_nonconformal_faces),ctr))
+        print("Something is off. {} non conformal faces match this hanging point. 4 non conformal faces should match (Quad4Quad)".format(len(match_nonconformal_faces)))
 
     list_nodes_B4B = nonconformal_faces[match_nonconformal_faces]
     for position in list_nodes_B4B:
