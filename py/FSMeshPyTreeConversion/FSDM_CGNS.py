@@ -11,7 +11,6 @@ import Converter.Internal as Internal
 #FSDM imports
 import FSDM
 from FSDataManager import FSClac, FSMesh, FSError, FSFloatArray, FSIntArray, FSStringArray, FSDataName, FSDataSpecArray, FSDatasetInfo, FSMeshEnums, FSUnstructVolumeCellTypes, FSUnstructSurfaceCellTypes, FS_AT_CADGroupID, FSCellInfo
-import FSZoltan
 import numpy
 from functools import cmp_to_key
 
@@ -19,6 +18,11 @@ try:
   from FSDMPyUtils import ArrayOps
 except:
   print("No FSDMPyUtils found. Continuing..")
+try:
+    import FSZoltan
+    WITH_FSZOLTAN = True
+except ImportError:
+    WITH_FSZOLTAN = False
 
 import os, sys,time
 
@@ -845,7 +849,7 @@ class Converter_FSDM_CGNS:
         command = "ImportMeshHDF5"
       elif self.mesh_name.split('.')[-1] == 'grid' or self.mesh_name.split('.')[-1] == 'cdf':
         command = "ImportMeshTAU"
-
+      command_partitioning = "RepartitionMeshZOLTAN" if WITH_FSZOLTAN else "RepartitionMeshPARMETIS"
       meshOps = ((command, {"MeshFilename" : self.mesh_name}),
              "PrintInfo",
              # --- create a reasonable partitioning for ZOLTAN (avoids memory bottlenecks) ---
@@ -853,7 +857,7 @@ class Converter_FSDM_CGNS:
              # ----create local numbering,
              "CreateLocalNumbering",
              # --- main task ---
-             ("RepartitionMeshZOLTAN", { "PreserveCellStacks" : True,
+             (command_partitioning, { "PreserveCellStacks" : True,
                                          "LineSectionsExtractionParameters" :
                                          { "ActiveNodesSelection" : { "CellTypes" : ("Prisms", "Hexahedra","Tetrahedra","Pyramids","Quadrilaterals","Triangles") },
                                            "StartNodesSelection"  : { "CellAttribute" : "CADGroupID",
