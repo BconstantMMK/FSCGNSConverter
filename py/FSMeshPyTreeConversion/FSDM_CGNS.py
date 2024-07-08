@@ -6,12 +6,19 @@ import Intersector.PyTree as XOR
 import Generator.PyTree as G
 import Post.PyTree as P
 import Converter.Internal as Internal
-from Converter.Internal import E_NpyInt
+import numpy
+
+# INT size for numpys connectivities
+from KCore.Dist import EDOUBLEINT
+if EDOUBLEINT: E_NpyInt = numpy.int64
+else: E_NpyInt = numpy.int32
+
+#from Converter.Internal import E_NpyInt
 
 #FSDM imports
 import FSDM
 from FSDataManager import FSClac, FSMesh, FSError, FSFloatArray, FSIntArray, FSStringArray, FSDataName, FSDataSpecArray, FSDatasetInfo, FSMeshEnums, FSUnstructVolumeCellTypes, FSUnstructSurfaceCellTypes, FS_AT_CADGroupID, FSCellInfo
-import numpy
+
 from functools import cmp_to_key
 
 try:
@@ -1032,7 +1039,7 @@ class Converter_FSDM_CGNS:
           types  = unstructDataset.GetCellTypes()
           types_numpy = numpy.array(types.Buffer(),copy=True)
 
-          indices_GC = numpy.empty(0,dtype=Internal.E_NpyInt)
+          indices_GC = numpy.empty(0,dtype=E_NpyInt)
           totalNCells = 0
           for idx,cell_type in enumerate(types):
              NOwnedCells = self.fsmesh.GetNOwnedCells(cell_type)
@@ -1162,7 +1169,7 @@ class Converter_FSDM_CGNS:
     if z_NCfaces != None:
       nonconformal_faces_local = Internal.getNodeFromName(z_NCfaces,"ElementConnectivity")[1]-1 + self.cell2Proc[fs_cell_type][myID]
     else:
-      nonconformal_faces_local = numpy.empty(0,dtype=Internal.E_NpyInt)
+      nonconformal_faces_local = numpy.empty(0,dtype=E_NpyInt)
 
     allgathered_nonconformal_faces_local = Cmpi.gather(nonconformal_faces_local,0)
     del nonconformal_faces_local;
@@ -1246,7 +1253,7 @@ class Converter_FSDM_CGNS:
       hook = C.createHook(self.pytree, 'nodes')
       ids = C.identifyNodes(hook, z_NCfaces)
     else:
-      ids = numpy.empty(0,dtype=Internal.E_NpyInt)
+      ids = numpy.empty(0,dtype=E_NpyInt)
     if self.MPI==True:
       ids = ids[ids>-1]-1 + self.cell2Proc[1][myID]
       ids_gathered = numpy.concatenate(Cmpi.allgather(ids))
@@ -1314,7 +1321,7 @@ class Converter_FSDM_CGNS:
     Internal.createUniqueChild(info, 'GridLocation', 'GridLocation_t',
                               value='FaceCenter')
     if isinstance(faceList, numpy.ndarray): r = faceList
-    else: r = numpy.array(faceList, dtype=Internal.E_NpyInt)
+    else: r = numpy.array(faceList, dtype=E_NpyInt)
     r = r.reshape((1,r.size), order='F')
     info[2].append([Internal.__FACELIST__, r, [], 'IndexArray_t'])
     if bndType == 'Abutting1to1':
@@ -1966,7 +1973,7 @@ def _recoverBCsC(a, T, tol=1.e-11):
         ids = C.identifyElements(hook, b, tol)
       else:
         bb = C.breakConnectivity(b)
-        ids = numpy.array([], dtype=Internal.E_NpyInt)
+        ids = numpy.array([], dtype=E_NpyInt)
         for bc in bb:
           ids = numpy.concatenate([ids, C.identifyElements(hook, bc, tol)])
 
@@ -1979,7 +1986,7 @@ def _recoverBCsC(a, T, tol=1.e-11):
             list_BCNames.append(BCNames[c])
             list_BCTypes.append(BCTypes[c])
       else:
-        id2 = numpy.empty(sizebc, dtype=Internal.E_NpyInt)
+        id2 = numpy.empty(sizebc, dtype=E_NpyInt)
         id2[:] = indicesF[ids[:]-1]
         C._addBC2Zone(z, BCNames[c], BCTypes[c], faceList=id2)
 
@@ -2074,7 +2081,7 @@ def _recoverBCs2(t, BCInfo, tol):
                         ids = C.identifyElements(hook, b, tol)
                     else:
                         bb = breakConnectivity(b)
-                        ids = numpy.array([], dtype=Internal.E_NpyInt)
+                        ids = numpy.array([], dtype=E_NpyInt)
                         for bc in bb:
                             ids = numpy.concatenate([ids, C.identifyElements(hook, bc, tol)])
 
@@ -2083,7 +2090,7 @@ def _recoverBCs2(t, BCInfo, tol):
                     ids = ids[ids > -1]
                     sizebc = ids.size
                     if sizebc > 0:
-                        id2 = numpy.empty(sizebc, dtype=Internal.E_NpyInt)
+                        id2 = numpy.empty(sizebc, dtype=E_NpyInt)
                         id2[:] = indicesE[ids[:]-1]
                         C._addBC2Zone(z, BCNames[c], BCTypes[c], faceList=id2)
 
@@ -2141,7 +2148,7 @@ def _recoverBCs1(a, T, tol=1.e-11):
         ids = C.identifyElements(hook, b, tol)
       else:
         bb = C.breakConnectivity(b)
-        ids = numpy.array([], dtype=Internal.E_NpyInt)
+        ids = numpy.array([], dtype=E_NpyInt)
         for bc in bb:
           ids = numpy.concatenate([ids, C.identifyElements(hook, bc, tol)])
 
@@ -2150,7 +2157,7 @@ def _recoverBCs1(a, T, tol=1.e-11):
       ids  = ids[ids > -1]
       sizebc = ids.size
       if sizebc > 0:
-        id2 = numpy.empty(sizebc, dtype=Internal.E_NpyInt)
+        id2 = numpy.empty(sizebc, dtype=E_NpyInt)
         id2[:] = indicesF[ids[:]-1]
         C._addBC2Zone(z, BCNames[c], BCTypes[c], faceList=id2)
 
