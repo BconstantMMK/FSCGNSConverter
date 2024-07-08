@@ -6,7 +6,7 @@ import Intersector.PyTree as XOR
 import Generator.PyTree as G
 import Post.PyTree as P
 import Converter.Internal as Internal
-
+from Converter.Internal import E_NpyInt
 
 #FSDM imports
 import FSDM
@@ -1032,7 +1032,7 @@ class Converter_FSDM_CGNS:
           types  = unstructDataset.GetCellTypes()
           types_numpy = numpy.array(types.Buffer(),copy=True)
 
-          indices_GC = numpy.empty(0,dtype=numpy.int32)
+          indices_GC = numpy.empty(0,dtype=Internal.E_NpyInt)
           totalNCells = 0
           for idx,cell_type in enumerate(types):
              NOwnedCells = self.fsmesh.GetNOwnedCells(cell_type)
@@ -1162,7 +1162,7 @@ class Converter_FSDM_CGNS:
     if z_NCfaces != None:
       nonconformal_faces_local = Internal.getNodeFromName(z_NCfaces,"ElementConnectivity")[1]-1 + self.cell2Proc[fs_cell_type][myID]
     else:
-      nonconformal_faces_local = numpy.empty(0,dtype=numpy.int64)
+      nonconformal_faces_local = numpy.empty(0,dtype=Internal.E_NpyInt)
 
     allgathered_nonconformal_faces_local = Cmpi.gather(nonconformal_faces_local,0)
     del nonconformal_faces_local;
@@ -1246,7 +1246,7 @@ class Converter_FSDM_CGNS:
       hook = C.createHook(self.pytree, 'nodes')
       ids = C.identifyNodes(hook, z_NCfaces)
     else:
-      ids = numpy.empty(0,dtype=numpy.int64)
+      ids = numpy.empty(0,dtype=Internal.E_NpyInt)
     if self.MPI==True:
       ids = ids[ids>-1]-1 + self.cell2Proc[1][myID]
       ids_gathered = numpy.concatenate(Cmpi.allgather(ids))
@@ -1314,7 +1314,7 @@ class Converter_FSDM_CGNS:
     Internal.createUniqueChild(info, 'GridLocation', 'GridLocation_t',
                               value='FaceCenter')
     if isinstance(faceList, numpy.ndarray): r = faceList
-    else: r = numpy.array(faceList, dtype=numpy.int32)
+    else: r = numpy.array(faceList, dtype=Internal.E_NpyInt)
     r = r.reshape((1,r.size), order='F')
     info[2].append([Internal.__FACELIST__, r, [], 'IndexArray_t'])
     if bndType == 'Abutting1to1':
