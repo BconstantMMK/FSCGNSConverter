@@ -641,6 +641,8 @@ class Converter_FSDM_CGNS:
     for marker in self.boundary_marker_to_bc_name :
         point_list = self.boundary_marker_to_point_list[marker]-self.nb_cells_volume
         marker_array[point_list] = marker #
+
+    tmp_idx = 0
     #Loop on surface cell types in the mesh and slice the array above to get the data we need
     for cell_type in self.fs_surface_cell_types :
       if self.dict_bc_elts["QUAD"]!=[] and self.dict_bc_elts["TRI"]!=[]:
@@ -648,11 +650,16 @@ class Converter_FSDM_CGNS:
         temp = set(self.dict_bc_elts[string_cassiopee_celltype])
         res = [i for i, val in enumerate(marker_array) if val in temp]
         np_marker_array_cell_type = marker_array[res]
+      elif len(self.fs_surface_cell_types)==1:
+          np_marker_array_cell_type = marker_array
       else:
-        np_marker_array_cell_type = marker_array
+          len_current_celltype = self.fsmesh.GetNCells(cell_type)
+          res = numpy.arange(tmp_idx, tmp_idx+len_current_celltype)
+          np_marker_array_cell_type = marker_array[res]
+          tmp_idx += len_current_celltype
+
       fs_marker_array_cell_type = FSIntArray(np_marker_array_cell_type.shape[0])
       numpy.copyto(numpy.array(fs_marker_array_cell_type.Buffer(), copy=False), np_marker_array_cell_type, casting='unsafe')
-
       self.fsmesh.InitCellAttribute(FS_AT_CADGroupID, cell_type, fs_marker_array_cell_type)
     #Then we attach our boundary marker to their name in the fsmesh
     if self.IBM ==True:
