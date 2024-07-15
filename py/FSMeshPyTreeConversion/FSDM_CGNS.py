@@ -570,10 +570,13 @@ class Converter_FSDM_CGNS:
     for count,bc_node in enumerate(pytree_bc_nodes) :
 
       bc_name = bc_node[0]
-
-      #Get boundary marker : generate one if it does not exist otherwise we expect it to be in a user defined node named "BoundaryMarker"
-      bc_boundary_marker = current_automatic_marker
-      current_automatic_marker += 1
+      boundary_marker_node = Internal.getNodeFromName(bc_node,"BoundaryMarker")
+      if boundary_marker_node != None:
+          bc_boundary_marker = Internal.getValue(boundary_marker_node)
+      else:
+          #Get boundary marker : generate one if it does not exist otherwise we expect it to be in a user defined node named "BoundaryMarker"
+          bc_boundary_marker = current_automatic_marker
+          current_automatic_marker += 1
       len_point_list = 0
 
       #Get list of points on the BC : based on name to make the difference between point list and point range ;
@@ -1021,7 +1024,7 @@ class Converter_FSDM_CGNS:
         node_bc[0] = bcname
         boundarystatedataset=Internal.createNode('BCDataSet','BCDataSet_t',parent=node_bc,value='Null')
         boundarystate = Internal.createNode("Boundary",'BCData_t',parent=boundarystatedataset)
-        boundarystate[2].append(["BoundaryMarker",int(self.fs_markers[idx])*numpy.ones(nb_cell_current_boundary), [], 'DataArray_t'])
+        boundarystate[2].append(["BoundaryMarker",int(self.fs_markers[idx]), [], 'UserDefinedData_t'])
         counter_cells += nb_cell_current_boundary
     return
 
