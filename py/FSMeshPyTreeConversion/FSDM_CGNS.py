@@ -571,19 +571,20 @@ class Converter_FSDM_CGNS:
     for count,bc_node in enumerate(pytree_bc_nodes) :
 
       bc_name = bc_node[0]
-      boundary_marker_node = Internal.getNodeFromName(bc_node,"BoundaryMarker")
-      if boundary_marker_node != None:
-          bc_boundary_marker = Internal.getValue(boundary_marker_node)
-      else:
-          #Get boundary marker : generate one if it does not exist otherwise we expect it to be in a user defined node named "BoundaryMarker"
-          bc_boundary_marker = current_automatic_marker
-          current_automatic_marker += 1
+
       len_point_list = 0
 
       #Get list of points on the BC : based on name to make the difference between point list and point range ;
       if (Internal.getNodeFromType(bc_node, "IndexArray_t")!=None):
         pointlist_node = Internal.getNodeFromType(bc_node, "IndexArray_t")
         point_list = numpy.ravel(pointlist_node[1]) - 1
+        boundary_marker_node = Internal.getNodeFromName(bc_node,"BoundaryMarker")
+        if boundary_marker_node != None:
+            bc_boundary_marker = Internal.getValue(boundary_marker_node)
+        else:
+            #Get boundary marker : generate one if it does not exist otherwise we expect it to be in a user defined node named "BoundaryMarker"
+            bc_boundary_marker = current_automatic_marker
+            current_automatic_marker += 1
 
       elif (Internal.getNodeFromType(bc_node, "IndexRange_t")!=None):
         pointlist_node = Internal.getNodeFromType(bc_node, "IndexRange_t")
@@ -591,7 +592,13 @@ class Converter_FSDM_CGNS:
           point_list = numpy.arange(pointlist_node[1][0][0]-1, pointlist_node[1][0][1])
         elif len(pointlist_node[1])==2:
           point_list = numpy.arange(pointlist_node[1][0]-1, pointlist_node[1][1])
+        boundary_marker_node = Internal.getNodeFromName(bc_node,"BoundaryMarker")
+        if boundary_marker_node != None:
+            print("WARNING: The boundary markers in the CGNS pytree will not be taken into account. Automatic boundary markers are defined instead.")
+        bc_boundary_marker = current_automatic_marker
+        current_automatic_marker += 1
       len_point_list += len(point_list)
+
       #Now we can fill our dictionnaries
       self.boundary_marker_to_bc_name[bc_boundary_marker] = bc_name
       self.boundary_marker_to_point_list[bc_boundary_marker] = point_list
