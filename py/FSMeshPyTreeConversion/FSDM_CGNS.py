@@ -545,6 +545,7 @@ class Converter_FSDM_CGNS:
     return
 
   def recoverPointList2BoundaryMarkers(self):
+    self.reorderCells()
 
     pytree_zonebc_node = Internal.getNodeFromType(self.pytree, "ZoneBC_t")
     pytree_bc_nodes = Internal.getNodesFromType(pytree_zonebc_node, "BC_t")
@@ -1926,6 +1927,64 @@ class Converter_FSDM_CGNS:
               family_node = Internal.createNode(bc[2], 'Family_t', parent=base)
               Internal.createChild(family_node, 'FamilyBC', 'FamilyBC_t', value=bc[1], pos=0)
       return None
+
+  def reorderCells(self):
+    PL = Internal.getNodesFromName(self.pytree,"PointList")
+    if PL != []:
+      if 3 in self.fs_cell_types and 4 in self.fs_cell_types:
+          position_tri = self.fs_cell_types.index(3)
+          position_quad = self.fs_cell_types.index(4)
+          if position_tri != len(self.fs_cell_types)-1 or position_quad != len(self.fs_cell_types)-2:
+            self.reorderCells_()
+      elif 3 in self.fs_cell_types:
+          position_tri = self.fs_cell_types.index(3)
+          if position_tri != len(self.fs_cell_types)-1:
+            self.reorderCells_()
+      elif 4 in self.fs_cell_types:
+          position_quad = self.fs_cell_types.index(4)
+          if position_quad != len(self.fs_cell_types)-1:
+            self.reorderCells_()
+    return
+
+  def reorderCells_(self):
+       imposedOrder_vol = [17,14,12,10]
+       imposedOrder_surf = [7,5]
+       imposedOrder = imposedOrder_vol+imposedOrder_surf
+       elts = Internal.getNodesFromType(self.pytree,"Elements_t")
+       type2originalRange = {}
+       type2originalRange[7] = numpy.zeros(2,dtype=numpy.int)
+       type2originalRange[5] = numpy.zeros(2,dtype=numpy.int)
+       for elt in elts:
+           cell_type = Internal.getValue(elt)[0]
+           ER = Internal.getNodeFromName(elt,"ElementRange")
+           type2originalRange[cell_type] = ER[1]
+       offset = 0
+       newOffsets = {}
+       for cell_type in imposedOrder:
+           cell_type_FSDM = self.CellTypesCassiopee2FS(cell_type)
+           cell_type_FSDM = FSMeshEnums.StringToCellType(cell_type_FSDM)
+           if cell_type_FSDM in self.fs_cell_types:
+               original_range = type2originalRange[cell_type]
+               ncell = original_range[1]-original_range[0]+1
+               newOffsets[cell_type] = [offset+1, offset+ncell]
+               offset += ncell
+       bcs = Internal.getNodesFromType(self.pytree,"BC_t")
+       originalRangeQuad = type2originalRange[7]
+       originalRangeTri = type2originalRange[5]
+       for bc in bcs:
+           PL = Internal.getNodeFromName(bc,"PointList")
+           if len(PL[1])==1:
+               PL_array = PL[1][0]
+           else:
+               PL_array = PL[1]
+           for i in range(len(PL_array)):
+               isQuad = (PL_array[i] >= originalRangeQuad[0] and PL_array[i] <= originalRangeQuad[1])
+               if isQuad:
+                   PL_array[i] = PL_array[i] - originalRangeQuad[0] + newOffsets[7][0]
+               else:
+                   PL_array[i] = PL_array[i] - originalRangeTri[0] + newOffsets[5][0]
+
+       return
 
 def _fixNodesForFlowSolution(t):
 
