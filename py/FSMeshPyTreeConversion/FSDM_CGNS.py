@@ -333,13 +333,11 @@ class Converter_FSDM_CGNS:
     for name in emptybases:
       Internal._rmNodesByNameAndType(self.pytree,name,"CGNSBase_t")
 
-    base = Internal.getBases(self.pytree)[0]
-
     if Cmpi.rank==0:print("Retrieving mesh information from Cassiopee...")
 
     self.reorderCells()
     #Get mesh information
-    zones = Internal.getZones(base)
+    zones = Internal.getZones(self.pytree)
     if zones != []:
       zone = zones[0]
       zoneDim = Internal.getZoneDim(zone)
@@ -1208,7 +1206,7 @@ class Converter_FSDM_CGNS:
       allgathered_nonconformal_faces_local = numpy.concatenate(allgathered_nonconformal_faces_local)
       allgathered_nodes = numpy.hstack([allgathered_x.reshape(len(allgathered_x),1), allgathered_y.reshape(len(allgathered_x),1), allgathered_z.reshape(len(allgathered_x),1)])
 
-      if self.dimPb==2 and self.MPI==True:
+      if self.MPI==True:
 
           cmpIdx = lambda a, b : cmp(allgathered_nodes[a], allgathered_nodes[b])
           idx_sorted = sorted(range(len(allgathered_nodes)), key=cmp_to_key(cmpIdx))
@@ -1266,7 +1264,7 @@ class Converter_FSDM_CGNS:
       print(Cmpi.rank,"time for hanging nodes search: ", toc-tic)
       print(Cmpi.rank, "size listQuadNQuad",listQuadNQuad_local.shape[0])
 
-      if self.dimPb==2 and self.MPI==True:
+      if self.MPI==True:
           listQuadNQuad_local = dedup2dup[listQuadNQuad_local]
 
     print("before initializecell2proc")
