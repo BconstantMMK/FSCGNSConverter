@@ -325,6 +325,14 @@ class Converter_FSDM_CGNS:
     elif not isinstance(self.mesh_name, str):
         self.pytree = self.mesh_name
 
+    emptybases = []
+    for base in Internal.getBases(self.pytree):
+        zones = Internal.getZones(base)
+        if zones == []:
+            emptybases.append(base[0])
+    for name in emptybases:
+      Internal._rmNodesByNameAndType(self.pytree,name,"CGNSBase_t")
+
     base = Internal.getBases(self.pytree)[0]
 
     if Cmpi.rank==0:print("Retrieving mesh information from Cassiopee...")
