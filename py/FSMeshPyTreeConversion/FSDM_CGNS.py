@@ -1893,7 +1893,7 @@ class Converter_FSDM_CGNS:
         bctype = Internal.getValue(bcnode)
         family_name = name.split('.')[0]
         marker = (name.split('.')[1]).split('_')[1]
-        family_name_marker = family_name+"_BoundaryMarker_"+str(marker)
+        family_name_marker = family_name+"_"+str(marker)
         if marker not in markers:
           markers.append(marker)
           family_names.append(family_name_marker)
