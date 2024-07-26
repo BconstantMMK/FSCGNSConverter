@@ -2569,7 +2569,8 @@ def create_Quad4Quad(coordinates, nonconformal_faces, nonconformal_faces_ctr,tol
   t0 = time.time()
   print("Looking for non conformal faces in 3D mesh")
 
-  for point8 in ids_points8:
+  unique_ids_points8 = numpy.unique(ids_points8)
+  for point8 in unique_ids_points8:
     match_nonconformal_faces = node2cell_list[point8][1:]
     if len(match_nonconformal_faces)!=4:
         print("Something is off. {} non conformal faces match this hanging point. 4 non conformal faces should match (Quad4Quad)".format(len(match_nonconformal_faces)))
