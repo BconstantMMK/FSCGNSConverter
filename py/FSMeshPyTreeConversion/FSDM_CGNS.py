@@ -141,7 +141,7 @@ class Converter_FSDM_CGNS:
             if firstFound == False:
               node_first_surf = node
               firstFound = True
-        print("val",val,cell_type_CGNS)
+        #print("val",val,cell_type_CGNS)
         if i==0 and FSMeshEnums.StringToCellType(self.CellTypesCassiopee2FS(val)) in FSUnstructSurfaceCellTypes:
             self.fs_cell_types_BCs.append(val)
 
@@ -177,7 +177,7 @@ class Converter_FSDM_CGNS:
         #if bcname[-5:] != ".QUAD" and bcname[-4:] != ".TRI":
         if not ".QUAD" in bc[0] and not "TRI" in bc[0]:
           bc[0]=self.list_names_BCs[idx]
-        print("bc[0]=", bcname)
+        #print("bc[0]=", bcname)
         if Internal.getNodeFromType(bc, "IndexArray_t")!=None:
           if Internal.getNodeFromType(bc, "IndexArray_t")[0] == "PointList" :
             len_point_list += len(point_list)
@@ -820,7 +820,7 @@ class Converter_FSDM_CGNS:
   def checkAndExportFSDMmesh(self):
     isMeshOK = self.fsmesh.Check()
     if isMeshOK :
-      print("FSMESH successfully created")
+      if Cmpi.rank == 0: print("FSMESH successfully created")
     else:
       print("WARNING : An error was found in the fsmesh check....")
     if isinstance(self.mesh_name,str):
@@ -1007,7 +1007,7 @@ class Converter_FSDM_CGNS:
             self.list_names_BCs.append(str(self.fsmesh.GetCellAttributeValueName("CADGroupID", int(marker))))
             indices_vector = numpy.ravel(numpy.argwhere(np_boundary_markers_celltype==marker))
             offset_fsdm = self.fsmesh.GetCellOffset(cell_type) - self.nb_vertices
-            print(offset_fsdm,offset)
+            #print(offset_fsdm,offset)
             self.indices_per_boundary.append(indices_vector+offset)
             self.numpy_cell2node_surface.append(numpy.ravel(numpy_cell2node_not_raveled[indices_vector]))
             self.fs_cell_types_BCs.append(cell_type)
@@ -1366,6 +1366,7 @@ class Converter_FSDM_CGNS:
       npSizePerProc = numpy.empty((0), dtype=numpy.dtype('int'))
 
       if myID == 0:
+        tic = time.perf_counter()
         print("Sorting coordinates..")
         cmpIdx = lambda a, b : cmp(node_coordinates_numpy[a], node_coordinates_numpy[b])
         idx_sorted = sorted(range(len(node_coordinates_numpy)), key=cmp_to_key(cmpIdx))
@@ -1527,6 +1528,8 @@ class Converter_FSDM_CGNS:
                      Var[VarIndex] = dataset[elemIndex][1]
                      VarIndex =    Var.MapIndex(elemIndex, 2)
                      Var[VarIndex] = dataset[elemIndex][2]
+        toc = time.perf_counter()
+        print("time for deduplication", (toc-tic))
 
       return
 
@@ -1548,6 +1551,7 @@ class Converter_FSDM_CGNS:
       npSizePerProc = numpy.empty((0), dtype=numpy.dtype('int'))
 
       if myID == 0:
+        tic = time.perf_counter()
         print("Sorting coordinates..")
         cmpIdx = lambda a, b : cmp(node_coordinates_numpy[a], node_coordinates_numpy[b])
         idx_sorted = sorted(range(len(node_coordinates_numpy)), key=cmp_to_key(cmpIdx))
@@ -1712,6 +1716,8 @@ class Converter_FSDM_CGNS:
                      VarIndex =    Var.MapIndex(elemIndex, 2)
                      Var[VarIndex] = dataset[elemIndex][2]
 
+        toc = time.perf_counter()
+        print("time for deduplication", (toc-tic))
       return
 
 
