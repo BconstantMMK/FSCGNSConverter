@@ -2411,16 +2411,9 @@ def create_Quad2Quad_MPI(coordinates, nonconformal_faces, nonconformal_faces_ctr
 
   previous = nonconformal_faces_ctr_sorted[0]
   indices = [0]
-  j = 0
-  flag = True
   for i in range(1,nnodes_old):
     if (abs(previous-nonconformal_faces_ctr_sorted[i])>(10**(-t))).any(): #se sono diversi
-        j=j+1
         indices.append(i)
-        flag = True
-    elif not (abs(previous-nonconformal_faces_ctr_sorted[i])>(10**(-t))).any() and flag==True:
-      del indices[-1]
-      flag = False
     previous = nonconformal_faces_ctr_sorted[i]
 
   nonconformal_faces = nonconformal_faces_sorted[indices]
