@@ -1258,7 +1258,7 @@ class Converter_FSDM_CGNS:
       print(Cmpi.rank, "nonconformal_faces_local",nonconformal_faces_local.shape[0])
       tic = time.perf_counter()
 
-      if self.dimPb == 2:   listQuadNQuad_local, rest_faces = create_Quad2Quad_MPI(allgathered_nodes,nonconformal_faces_local,nonconformal_faces_ctr)
+      if self.dimPb == 2:   listQuadNQuad_local, rest_faces = create_Quad2Quad(allgathered_nodes,nonconformal_faces_local,nonconformal_faces_ctr)
       elif self.dimPb == 3: listQuadNQuad_local, rest_faces = create_Quad4Quad(allgathered_nodes,nonconformal_faces_local,nonconformal_faces_ctr)
       toc = time.perf_counter()
       print(Cmpi.rank,"time for hanging nodes search: ", toc-tic)
@@ -1580,6 +1580,7 @@ class Converter_FSDM_CGNS:
         npSizePerProc = numpy.zeros(self.clac.NProcs(), dtype=numpy.dtype('int'))
         for i in range(self.clac.NProcs()):
           npSizePerProc[i] = len(unique_coords)//self.clac.NProcs()
+      if myID ==0: print("Removing duplicated vertices from cell connectivities..")
       cell2Proc_nodes = initializeCell2ProcOutsideClass(self.clac,FSMeshEnums.CT_Node,len(unique_coords))
       dup2dedup = ArrayOps.Broadcast(dup2dedup,self.clac)
       fs_cell_types_NC = self.fs_cell_types if self.conformal else self.fs_cell_types + [quadNQuad]
@@ -2348,6 +2349,9 @@ def create_Quad2Quad(coordinates, nonconformal_faces, nonconformal_faces_ctr,pla
     node2cell_list_shr = node2cell_list_shr[node2cell_list_shr[:,0]!=i]
     node2cell_list_shr_sorted = node2cell_list_shr_sorted[node2cell_list_shr_sorted[:,0]!=i]
 
+  if len(node2cell_list_shr_sorted)%2 !=0:
+      raise ValueError("Something is off, some small faces are missing")
+
   big_face = []
   hns = []
   for conn in range(0,len(node2cell_list_shr_sorted[:,0]),2):
@@ -2389,155 +2393,10 @@ def create_Quad2Quad(coordinates, nonconformal_faces, nonconformal_faces_ctr,pla
     # Append to list
     listQuad2Quad.append(thisQuad2Quad)
   listQuad2Quad = numpy.array(listQuad2Quad)
-  if listQuad2Quad.shape[0] != nfaces/3:
-      raise ValueError("Problem on non conformal faces: only %d out of %d have been matched." %(listQuad2Quad.shape[0],nfaces//3))
-
-  return listQuad2Quad, 0
-
-def create_Quad2Quad_MPI(coordinates, nonconformal_faces, nonconformal_faces_ctr,tol=1e-6):
-
-  print("num centers before", len(nonconformal_faces_ctr))
-  t = 8
-  tol = 10**(-t)
-
-  cmpIdx = lambda a, b : cmp(nonconformal_faces_ctr[a], nonconformal_faces_ctr[b])
-  idx_sorted = sorted(range(len(nonconformal_faces_ctr)), key=cmp_to_key(cmpIdx))
-
-
-  nnodes_old = len(nonconformal_faces_ctr)
-
-  nonconformal_faces_ctr_sorted = nonconformal_faces_ctr[idx_sorted]
-  nonconformal_faces_sorted = nonconformal_faces[idx_sorted]
-
-  previous = nonconformal_faces_ctr_sorted[0]
-  indices = [0]
-  for i in range(1,nnodes_old):
-    if (abs(previous-nonconformal_faces_ctr_sorted[i])>(10**(-t))).any(): #se sono diversi
-        indices.append(i)
-    previous = nonconformal_faces_ctr_sorted[i]
-
-  nonconformal_faces = nonconformal_faces_sorted[indices]
-  nonconformal_faces_ctr = nonconformal_faces_ctr_sorted[indices]
-
-  if len(numpy.unique(nonconformal_faces_ctr[:,2]))==1:
-      planedir = [0,1]
-      ndir = 2
-      plane = "xy"
-  elif len(numpy.unique(nonconformal_faces_ctr[:,1]))==1:
-      planedir = [0,2]
-      ndir = 1
-      plane = "xz"
-  else:
-      raise Exception("plane in create_Quad2Quad must be 'xy' or 'xz'.")
-  if len(nonconformal_faces) != len(nonconformal_faces_ctr):
-      raise Exception("len(nonconformal_faces) != len(non_conformal_faces_ctr)")
-
-  nfaces = len(nonconformal_faces)
-  print("\nQuad2Quad: {} original non conformal faces ({} potential Quad2Quad)".format(nfaces, nfaces/3))
-  print("Looking for non conformal faces in 2D mesh, plane {}".format(plane))
-
-  listQuad2Quad = []
-  len_NCF = len(nonconformal_faces)
-
-  node2cell_list = ComputeNode2CellList(nonconformal_faces, len_NCF, len(coordinates[:,0]))
-  lengths = numpy.array([len(x) for x in node2cell_list])
-
-  points45_init = numpy.where(lengths==3)[0]
-  node2cell_list = numpy.array(node2cell_list,dtype=object)
-  node2cell_list_shr = numpy.vstack(node2cell_list[points45_init])
-
-  indexes = numpy.lexsort(numpy.vstack([node2cell_list_shr[:,1], node2cell_list_shr[:,2]]))
-
-  node2cell_list_shr_sorted = node2cell_list_shr[indexes]
-
-  remove_node = []
-  for i in range(0,len(node2cell_list_shr_sorted[:,0]),2):
-    [idx1, iface1, iface2] = node2cell_list_shr_sorted[i]
-    idx2 = node2cell_list_shr_sorted[i+1][0]
-    x1_ctr = nonconformal_faces_ctr[iface1][0]
-    y1_ctr = nonconformal_faces_ctr[iface1][1]
-    z1_ctr = nonconformal_faces_ctr[iface1][2]
-
-    x2_ctr = nonconformal_faces_ctr[iface2][0]
-    y2_ctr = nonconformal_faces_ctr[iface2][1]
-    z2_ctr = nonconformal_faces_ctr[iface2][2]
-
-    x1 = coordinates[idx1][0]
-    y1 = coordinates[idx1][1]
-    z1 = coordinates[idx1][2]
-
-    x2 = coordinates[idx2][0]
-    y2 = coordinates[idx2][1]
-    z2 = coordinates[idx2][2]
-
-
-    vector1 = numpy.array([(y1-y1_ctr)*(z2-z1)-(y2-y1)*(z1-z1_ctr), (x1-x1_ctr)*(z2-z1)-(z1-z1_ctr)*(x2-x1), (x1-x1_ctr)*(y2-y1)-(y1-y1_ctr)*(x2-x1)])
-    vector1norm = numpy.linalg.norm(vector1)
-    vector1 = vector1/vector1norm
-    vector2 = numpy.array([(y1-y2_ctr)*(z2-z1)-(y2-y1)*(z1-z2_ctr), (x1-x2_ctr)*(z2-z1)-(z1-z2_ctr)*(x2-x1), (x1-x2_ctr)*(y2-y1)-(y1-y2_ctr)*(x2-x1)])
-    vector2norm = numpy.linalg.norm(vector2)
-    vector2 = vector2/vector2norm
-    scalar_product = numpy.dot(vector1,vector2)
-    if scalar_product > 0.0:
-      remove_node.append(node2cell_list_shr_sorted[i][0])
-      remove_node.append(node2cell_list_shr_sorted[i+1][0])
-
-  for i in remove_node:
-    points45_init = points45_init[points45_init!=i]
-
-    node2cell_list_shr = node2cell_list_shr[node2cell_list_shr[:,0]!=i]
-    node2cell_list_shr_sorted = node2cell_list_shr_sorted[node2cell_list_shr_sorted[:,0]!=i]
-
-  print("len(remove node)",len(remove_node))
-  print("len(node2cell_list_shr_sorted)",len(node2cell_list_shr_sorted))
-  big_face = []
-  hns = []
-  for conn in range(0,len(node2cell_list_shr_sorted[:,0]),2):
-    nd1 = node2cell_list_shr_sorted[conn][0]
-    nd2 = node2cell_list_shr_sorted[conn+1][0]
-
-    el1 = node2cell_list_shr_sorted[conn][1]
-    el2 = node2cell_list_shr_sorted[conn][2]
-
-    big_face_concatenated = numpy.concatenate([nonconformal_faces[el1],nonconformal_faces[el2]])
-    big_face_concatenated = big_face_concatenated[big_face_concatenated!=nd1]
-    big_face_concatenated = big_face_concatenated[big_face_concatenated!=nd2]
-
-    hns.append([nd1,nd2])
-    big_face.append(big_face_concatenated)
-  print("len(big_face)",len(big_face))
-  for idx,nodes in enumerate(big_face):
-    point4 = hns[idx][0]
-    point5 = hns[idx][1]
-
-    i01 = abs(coordinates[nodes,ndir]-coordinates[point4,ndir])<tol
-
-    point01 = nodes[i01]
-    point0 = point01[0]
-    point1 = point01[1]
-    point23 = nodes[~i01]
-    point2 = point23[0]
-    point3 = point23[1]
-
-    r02 = coordinates[point2] - coordinates[point0]
-    r03 = coordinates[point3] - coordinates[point0]
-    r04 = coordinates[point4] - coordinates[point0]
-    r05 = coordinates[point5] - coordinates[point0]
-
-    if numpy.cross(r02,r03).dot(numpy.cross(r04,r05)) < 0:
-        point2 = point23[1]
-        point3 = point23[0]
-    thisQuad2Quad = [ point0, point1, point2, point3, point4, point5 ]
-    # Append to list
-    listQuad2Quad.append(thisQuad2Quad)
-  listQuad2Quad = numpy.array(listQuad2Quad)
-
   #if listQuad2Quad.shape[0] != nfaces/3:
-  if listQuad2Quad.shape[0] < nfaces/3:
-      raise ValueError("Problem on non conformal faces: only %d out of %d have been matched." %(listQuad2Quad.shape[0],nfaces//3))
+  #    raise ValueError("Problem on non conformal faces: only %d out of %d have been matched." %(listQuad2Quad.shape[0],nfaces//3))
 
   return listQuad2Quad, 0
-
 
 def create_Quad4Quad(coordinates, nonconformal_faces, nonconformal_faces_ctr,tol=1e-6):
   nb_vertices = coordinates.shape[0]
@@ -2572,7 +2431,7 @@ def create_Quad4Quad(coordinates, nonconformal_faces, nonconformal_faces_ctr,tol
   for point8 in unique_ids_points8:
     match_nonconformal_faces = node2cell_list[point8][1:]
     if len(match_nonconformal_faces)!=4:
-        print("Something is off. {} non conformal faces match this hanging point. 4 non conformal faces should match (Quad4Quad)".format(len(match_nonconformal_faces)))
+        raise ValueError("Something is off. {} non conformal faces match this hanging point. 4 non conformal faces should match (Quad4Quad)".format(len(match_nonconformal_faces)))
 
     list_nodes_B4B = nonconformal_faces[match_nonconformal_faces]
     for position in list_nodes_B4B:
