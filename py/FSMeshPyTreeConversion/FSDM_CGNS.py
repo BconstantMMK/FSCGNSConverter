@@ -193,23 +193,23 @@ class Converter_FSDM_CGNS:
 
   def prepareDatasetOfNonConformalFaces(self):
     bc_names = [bc[0] for bc in Internal.getNodesFromType(self.pytree,'BC_t')]
-    rm = Internal.getNodeFromName(self.pytree,'QuadNQuad')
-    old_name_hf = rm[0]
-    rm[0] = "NonConformalFaces"
-    Internal._renameNode(self.pytree,old_name_hf,"NonConformalFaces")
-    NCF = Internal.getNodeFromName(self.pytree,"NonConformalFaces")
-    if Internal.getNodeFromName(NCF,"PointList")!= None:
-      len_NCF = Internal.getNodeFromName(NCF,"PointList")[1][0].shape[0]
-    elif Internal.getNodeFromName(NCF,"ElementRange")!= None:
-      if len(Internal.getNodeFromName(NCF,"ElementRange")[1])==1:
-        ERmin = Internal.getNodeFromName(NCF,"ElementRange")[1][0][0]
-        ERmax = Internal.getNodeFromName(NCF,"ElementRange")[1][0][1]
-      elif len(Internal.getNodeFromName(NCF,"ElementRange")[1])==2:
-        ERmin = Internal.getNodeFromName(NCF,"ElementRange")[1][0]
-        ERmax = Internal.getNodeFromName(NCF,"ElementRange")[1][1]
-      else: raise ValueError("Problem in the Element Range of non conformal interfaces.")
-      len_NCF = ERmax-ERmin+1
-    self.nb_cells_surface -= len_NCF
+    if "QuadNQuad" in bc_names:
+        rm = Internal.getNodeFromName(self.pytree,'QuadNQuad')
+        old_name_hf = rm[0]
+        Internal._renameNode(self.pytree,old_name_hf,"NonConformalFaces")
+        NCF = Internal.getNodeFromName(self.pytree,"NonConformalFaces")
+        if Internal.getNodeFromName(NCF,"PointList")!= None:
+          len_NCF = Internal.getNodeFromName(NCF,"PointList")[1][0].shape[0]
+        elif Internal.getNodeFromName(NCF,"ElementRange")!= None:
+          if len(Internal.getNodeFromName(NCF,"ElementRange")[1])==1:
+            ERmin = Internal.getNodeFromName(NCF,"ElementRange")[1][0][0]
+            ERmax = Internal.getNodeFromName(NCF,"ElementRange")[1][0][1]
+          elif len(Internal.getNodeFromName(NCF,"ElementRange")[1])==2:
+            ERmin = Internal.getNodeFromName(NCF,"ElementRange")[1][0]
+            ERmax = Internal.getNodeFromName(NCF,"ElementRange")[1][1]
+          else: raise ValueError("Problem in the Element Range of non conformal interfaces.")
+          len_NCF = ERmax-ERmin+1
+        self.nb_cells_surface -= len_NCF
     return
 
   def createZoneOfNonConformalFaces(self):
@@ -219,33 +219,37 @@ class Converter_FSDM_CGNS:
     zCoord = Internal.getNodeFromName(self.pytree,"CoordinateZ")[1]
 
     octree_faces_node = Internal.getNodesFromName(self.pytree,"NonConformalFaces")
-    octree_faces_EC_global = Internal.getNodeFromName(octree_faces_node,"ElementConnectivity")[1]
-    len_NCF = len(octree_faces_EC_global)//4
 
-    rm = Internal.getNodesFromName(self.pytree,'NonConformalFaces')
-    for i in rm:
-      Internal._rmNode(self.pytree,i)
+    if octree_faces_node != []:
+      octree_faces_EC_global = Internal.getNodeFromName(octree_faces_node,"ElementConnectivity")[1]
+      len_NCF = len(octree_faces_EC_global)//4
 
-    _,idx = numpy.unique(octree_faces_EC_global,return_index=True)
-    octree_faces_idx_nodes = octree_faces_EC_global[numpy.sort(idx)] - 1 #indices loc2glob
-    len_nodes_NCF = len(octree_faces_idx_nodes)
-    if len_nodes_NCF>0:
-      xCoord_nodes_NCF = xCoord[octree_faces_idx_nodes]
-      yCoord_nodes_NCF = yCoord[octree_faces_idx_nodes]
-      zCoord_nodes_NCF = zCoord[octree_faces_idx_nodes]
+      rm = Internal.getNodesFromName(self.pytree,'NonConformalFaces')
+      for i in rm:
+        Internal._rmNode(self.pytree,i)
 
-      nonconformal_faces_global = numpy.reshape(octree_faces_EC_global-1,(len_NCF,4))
-      indices1 = numpy.linspace(0,len_nodes_NCF-1,len_nodes_NCF,dtype=int)
-      glob2loc = numpy.zeros(self.nb_vertices,dtype=int)
-      glob2loc[octree_faces_idx_nodes] = indices1
-      nonconformal_faces_local = glob2loc[nonconformal_faces_global]
+      _,idx = numpy.unique(octree_faces_EC_global,return_index=True)
+      octree_faces_idx_nodes = octree_faces_EC_global[numpy.sort(idx)] - 1 #indices loc2glob
+      len_nodes_NCF = len(octree_faces_idx_nodes)
+      if len_nodes_NCF > 0:
+          xCoord_nodes_NCF = xCoord[octree_faces_idx_nodes]
+          yCoord_nodes_NCF = yCoord[octree_faces_idx_nodes]
+          zCoord_nodes_NCF = zCoord[octree_faces_idx_nodes]
 
-      z_octree_faces = Internal.newZone(name = "NonConformalFaces",zsize=[[len(xCoord_nodes_NCF),len(octree_faces_idx_nodes)]],ztype="Unstructured")
-      gc = Internal.newGridCoordinates(parent = z_octree_faces)
-      Internal.newDataArray('CoordinateX', value = xCoord_nodes_NCF, parent = gc)
-      Internal.newDataArray('CoordinateY', value = yCoord_nodes_NCF, parent = gc)
-      Internal.newDataArray('CoordinateZ', value = zCoord_nodes_NCF, parent = gc)
-      Internal.newElements(name = "NonconformalFaces", etype = 7, econnectivity = numpy.ravel(nonconformal_faces_local+1), erange = [1, len_NCF], eboundary = 0, parent = z_octree_faces)
+          nonconformal_faces_global = numpy.reshape(octree_faces_EC_global-1,(len_NCF,4))
+          indices1 = numpy.linspace(0,len_nodes_NCF-1,len_nodes_NCF,dtype=int)
+          glob2loc = numpy.zeros(self.nb_vertices,dtype=int)
+          glob2loc[octree_faces_idx_nodes] = indices1
+          nonconformal_faces_local = glob2loc[nonconformal_faces_global]
+
+          z_octree_faces = Internal.newZone(name = "NonConformalFaces",zsize=[[len(xCoord_nodes_NCF),len(octree_faces_idx_nodes)]],ztype="Unstructured")
+          gc = Internal.newGridCoordinates(parent = z_octree_faces)
+          Internal.newDataArray('CoordinateX', value = xCoord_nodes_NCF, parent = gc)
+          Internal.newDataArray('CoordinateY', value = yCoord_nodes_NCF, parent = gc)
+          Internal.newDataArray('CoordinateZ', value = zCoord_nodes_NCF, parent = gc)
+          Internal.newElements(name = "NonconformalFaces", etype = 7, econnectivity = numpy.ravel(nonconformal_faces_local+1), erange = [1, len_NCF], eboundary = 0, parent = z_octree_faces)
+      else:
+          z_octree_faces = None #Internal.newZone(name = "NonConformalFaces",zsize=[[0,0]],ztype="Unstructured")
     else:
       z_octree_faces = None #Internal.newZone(name = "NonConformalFaces",zsize=[[0,0]],ztype="Unstructured")
     return z_octree_faces
