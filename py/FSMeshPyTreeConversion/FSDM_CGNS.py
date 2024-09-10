@@ -106,7 +106,7 @@ class Converter_FSDM_CGNS:
 
   def recoverConnectivitySurf(self, zbcs, noelt):
     len_bcs = len(zbcs)
-    connectivity_surf = numpy.array([])
+    connectivity_surf = numpy.array([],dtype=E_NpyInt)
     elts_t = Internal.getNodesFromType(self.pytree,'Elements_t')
     for elt in elts_t:
       if elt[1][0] == noelt and elt[0]!="NonConformalFaces":
@@ -163,7 +163,7 @@ class Converter_FSDM_CGNS:
   def createBCZonePerSurfaceElementType(self):
     print("\n\n\n\n")
     bcs_node = Internal.getNodesFromType(self.pytree,"BC_t")
-    point_list = numpy.array([])
+    point_list = numpy.array([],dtype=E_NpyInt)
     len_point_list = 0
     len_range = 0
 
@@ -186,7 +186,7 @@ class Converter_FSDM_CGNS:
         elif Internal.getNodeFromType(bc, "IndexRange_t")!=None:
           if Internal.getNodeFromType(bc, "IndexRange_t")[0] == "ElementRange" :
             element_range_old = Internal.getNodeFromName(bc, "ElementRange")[1][0]
-            element_range = numpy.array([[self.nb_cells_volume + len_point_list +1, self.nb_cells_volume + len_point_list + element_range_old[1]-element_range_old[0]+1]])
+            element_range = numpy.array([[self.nb_cells_volume + len_point_list +1, self.nb_cells_volume + len_point_list + element_range_old[1]-element_range_old[0]+1]],dtype=E_NpyInt)
             len_point_list += (element_range_old[1] - element_range_old[0] +1)
             Internal.getNodeFromName(bc, "ElementRange")[1][0] = element_range
     return
@@ -955,7 +955,7 @@ class Converter_FSDM_CGNS:
     for cell_type in self.fs_volume_cell_types:
       n_cell_owned = self.fsmesh.GetNOwnedCells(cell_type)
       fs_cell2Node = self.fsmesh.GetCell2Node(cell_type)
-      numpy_cell2node_not_raveled = numpy.array(fs_cell2Node.Buffer(), copy=True) + 1
+      numpy_cell2node_not_raveled = numpy.array(fs_cell2Node.Buffer(), copy=True,dtype=E_NpyInt) + 1
       if ghostCells == False: numpy_cell2node_not_raveled = numpy_cell2node_not_raveled[:n_cell_owned]
       self.numpy_cell2node_volume.append(numpy.ravel(numpy_cell2node_not_raveled))
 
@@ -969,7 +969,7 @@ class Converter_FSDM_CGNS:
       for i,cell_type in enumerate(self.fs_surface_cell_types):
         n_cell_owned = self.fsmesh.GetNOwnedCells(cell_type)
         fs_boundary_markers_celltype = self.fsmesh.GetCellAttribute("CADGroupID",cell_type)
-        np_boundary_markers_celltype = numpy.array(fs_boundary_markers_celltype.Buffer(), copy=True)
+        np_boundary_markers_celltype = numpy.array(fs_boundary_markers_celltype.Buffer(), copy=True,dtype=E_NpyInt)
         if ghostCells == False: np_boundary_markers_celltype = np_boundary_markers_celltype[:n_cell_owned]
         unique_markers[cell_type] =  numpy.unique(np_boundary_markers_celltype)
         if i>0:
@@ -1005,7 +1005,7 @@ class Converter_FSDM_CGNS:
           n_cell_owned = self.fsmesh.GetNOwnedCells(cell_type)
           n_cell = self.fsmesh.GetNCells(cell_type)
           fs_cell2Node = self.fsmesh.GetCell2Node(cell_type)
-          numpy_cell2node_not_raveled = (numpy.array(fs_cell2Node.Buffer(), copy=True) + 1)[:n_cell_owned]
+          numpy_cell2node_not_raveled = (numpy.array(fs_cell2Node.Buffer(), copy=True,dtype=E_NpyInt) + 1)[:n_cell_owned]
           np_boundary_markers_celltype = np_boundary_markers_celltype_dict[cell_type]
           if len(numpy.ravel(numpy.argwhere(np_boundary_markers_celltype==marker)))>0:
             self.list_names_BCs.append(str(self.fsmesh.GetCellAttributeValueName("CADGroupID", int(marker))))
@@ -1963,8 +1963,8 @@ class Converter_FSDM_CGNS:
 
        elts = Internal.getNodesFromType(self.pytree,"Elements_t")
        type2originalRange = {}
-       type2originalRange[7] = numpy.zeros(2,dtype=numpy.int)
-       type2originalRange[5] = numpy.zeros(2,dtype=numpy.int)
+       type2originalRange[7] = numpy.zeros(2,dtype=E_NpyInt)
+       type2originalRange[5] = numpy.zeros(2,dtype=E_NpyInt)
        for elt in elts:
            cell_type = Internal.getValue(elt)[0]
            ER = Internal.getNodeFromName(elt,"ElementRange")
