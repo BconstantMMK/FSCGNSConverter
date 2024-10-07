@@ -544,6 +544,7 @@ class Converter_FSDM_CGNS:
       quantityNames = FSStringArray(1)
       quantityNames[0] = quantity_name
       quantitySpecs = FSDataSpecArray(1)
+      quantitySpecs[0].Length()
 
       fsarray_volume_cell_types = FSIntArray(len(self.fs_volume_cell_types))
       numpy.copyto(numpy.array(fsarray_volume_cell_types.Buffer(), copy=False), self.fs_volume_cell_types, casting='unsafe')
@@ -779,6 +780,10 @@ class Converter_FSDM_CGNS:
       coordNames[2] = FSDataName.Coordinate().Z()
 
       coordSpecs = FSDataSpecArray(3)
+      coordSpecs[0].Length()
+      coordSpecs[1].Length()
+      coordSpecs[2].Length()
+
       for fsdataname in BC_names:
         self.fsmesh.InitUnstructDataset(fsdataname, FSDatasetInfo(coordNames, coordSpecs, cell_type))
 
