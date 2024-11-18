@@ -52,8 +52,8 @@ BCsCODA_childmeshcyl = [
 globalClac = FSClac() # by dafault, FSClac uses MPI_COMM_WORLD, i.e. all processes available
 nGlobalProcs = globalClac.GetNProcs()
 
-if nGlobalProcs < 2:
-    print("Must be run with at least 2 MPI processes!")
+if nGlobalProcs < 3:
+    print("Must be run with at least 3 MPI processes!")
     sys.exit(os.EX_USAGE)
 
 nGlobalProcsThird = nGlobalProcs / 3

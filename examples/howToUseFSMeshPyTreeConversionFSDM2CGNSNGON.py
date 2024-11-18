@@ -32,10 +32,7 @@ fsdm2cgns.convertFSDM2CGNS()
 
 FSLog(clac, 0, "------ Conversion CGNS multielement -> CGNS Ngon -------")
 
-# Attention when using mergeOnProc0=True because the "allGather" behind this option may require too much memory and make the conversion crash.
-# mergeOnProc=False is advised, the output will be one pytree, with one zone per processor (however not yet supported by FFD).
-
-fsdm2cgns.convertMonozoneME2Ngon4FFD(reorient=True,mergeOnProc0=False)
+fsdm2cgns.convertMonozoneME2Ngon4FFD(reorient=True)
 
 Cmpi.convertPyTree2File(fsdm2cgns.pytree,"mesh_ngon.cgns")
 
