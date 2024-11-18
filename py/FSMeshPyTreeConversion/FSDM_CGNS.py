@@ -35,7 +35,7 @@ import os, sys,time
 
 class Converter_FSDM_CGNS:
 
-  def __init__(self,mesh_name="mesh",clac=FSClac(),fsmesh=None,dimPb=2,invertPlanesYZ=False,conformal=True,IBM=False,IBM_parameters={},keepFlowSolution=False,whichDatasets=[],dict_BCs={},inmemory=False):
+  def __init__(self,mesh_name="mesh",clac=FSClac(),fsmesh=None,dimPb=2,invertPlanesYZ=False,conformal=True,IBM=False,IBM_parameters={},keepFlowSolution=False,whichDatasets=[],dict_BCs={},inmemory=False,coords_name="Coordinates"):
 
     #Parameters passed as arguments
     self.mesh_name = mesh_name
@@ -47,6 +47,7 @@ class Converter_FSDM_CGNS:
     self.keepFlowSolution = keepFlowSolution
     self.whichDatasets = whichDatasets
     self.inmemory = inmemory
+    self.coords_name = coords_name
     #Variables defined inside the class
 
     self.clac = clac
@@ -303,7 +304,7 @@ class Converter_FSDM_CGNS:
          len_bcs = len(bctypes)
 
          for i in range(len_bcs):
-           self._addBC2ZoneLoc(z,bctypes[i],bctypes[i], zbcs[i])
+           _addBC2ZoneLoc(z,bctypes[i],bctypes[i], zbcs[i])
            print("bctypes[i]",bctypes[i])
          self.pytree = C.newPyTree(["Unstructured",z])
       self.mergeQuadConnUnstructured(zbcs)
@@ -830,10 +831,10 @@ class Converter_FSDM_CGNS:
     else:
         mesh_name = "t"
     volumeCellTypes = tuple(FSMeshEnums.CellTypeToString(x) for x in FSUnstructVolumeCellTypes)
-    self.fsmesh.ExportMeshTECPLOT(Filename=mesh_name+"_vol.tp", PrefixDatasetName=True,  ExportCellTypes=volumeCellTypes) or FSError.PrintAndExit()
+    self.fsmesh.ExportMeshTECPLOT(Filename=mesh_name+"_vol.plt", PrefixDatasetName=True,  ExportCellTypes=volumeCellTypes) or FSError.PrintAndExit()
 
     surfaceCellTypes = tuple(FSMeshEnums.CellTypeToString(x) for x in FSUnstructSurfaceCellTypes)
-    self.fsmesh.ExportMeshTECPLOT(Filename=mesh_name+"_surf.tp", PrefixDatasetName=True, ZonePerCellAttributeValue=True,
+    self.fsmesh.ExportMeshTECPLOT(Filename=mesh_name+"_surf.plt", PrefixDatasetName=True, ZonePerCellAttributeValue=True,
             CellAttribute=FS_AT_CADGroupID, UseCellAttributeValueName=True,
             ExportCellTypes=surfaceCellTypes) or FSError.PrintAndExit()
 
@@ -925,7 +926,7 @@ class Converter_FSDM_CGNS:
     return
 
   def recoverCoordinatesFSDM(self):
-    node_coordinates = self.fsmesh.GetUnstructDataset("Coordinates").GetValues()
+    node_coordinates = self.fsmesh.GetUnstructDataset(self.coords_name).GetValues()
     node_coordinates_numpy = numpy.array(node_coordinates.Buffer(), copy=True)
     self.coordinatesX = numpy.ravel(node_coordinates_numpy[:,0])
     self.coordinatesY = numpy.ravel(node_coordinates_numpy[:,1])
@@ -1286,56 +1287,6 @@ class Converter_FSDM_CGNS:
       fs_cell2node = FSIntArray(0,FSCellInfo.NNodes(fs_cell_type))
     self.fsmesh.InitUnstructCells(fs_cell_type,self.cell2Proc[fs_cell_type], fs_cell2node, False)
 
-    return None
-
-  def _addBC2ZoneLoc(self,z, bndName, bndType, zbc, loc='FaceCenter', zdnrName=None):
-    s = bndType.split(':')
-    bndType1 = s[0]
-    if len(s) > 1: bndType2 = s[1]
-    else: bndType2 = ''
-
-    # Analyse zone zbc
-    dims = Internal.getZoneDim(zbc)
-    neb = dims[2] # nbre d'elts de zbc
-
-    eltType, nf = Internal.eltName2EltNo(dims[3]) # type d'elements de zbc
-    # On cherche l'element max dans les connectivites de z
-    maxElt = 0
-    connects = Internal.getNodesFromType(z, 'Elements_t')
-    for cn in connects:
-      r = Internal.getNodeFromName1(cn, 'ElementRange')
-      m = r[1][1]
-      maxElt = max(maxElt, m)
-
-    # on cree un nouveau noeud connectivite dans z1 (avec le nom de la zone z2)
-    nebb = neb
-    node = Internal.createUniqueChild(z, zbc[0], 'Elements_t', value=[eltType,nebb])
-    Internal.createUniqueChild(node, 'ElementRange', 'IndexRange_t',
-                             value=[maxElt+1,maxElt+neb])
-    oldc = Internal.getNodeFromName2(zbc, 'ElementConnectivity')[1]
-    newc = numpy.copy(oldc)
-    hook = C.createHook(z, 'nodes')
-    ids = C.identifyNodes(hook, zbc)
-    newc[:] = ids[oldc[:]-1]
-    faceList = [i for i in range(1,neb+1)]
-    Internal.createUniqueChild(node, 'ElementConnectivity', 'DataArray_t', value=newc)
-
-    zoneBC = Internal.createUniqueChild(z, 'ZoneBC', 'ZoneBC_t')
-    if len(s)==1:
-      info = Internal.createChild(zoneBC, bndName, 'BC_t', value=bndType)
-    else: # familyspecified
-      info = Internal.createChild(zoneBC, bndName, 'BC_t', value=bndType1)
-      Internal.createUniqueChild(info, 'FamilyName', 'FamilyName_t',
-                                 value=bndType2)
-
-    Internal.createUniqueChild(info, 'GridLocation', 'GridLocation_t',
-                              value='FaceCenter')
-    if isinstance(faceList, numpy.ndarray): r = faceList
-    else: r = numpy.array(faceList, dtype=E_NpyInt)
-    r = r.reshape((1,r.size), order='F')
-    info[2].append([Internal.__FACELIST__, r, [], 'IndexArray_t'])
-    if bndType == 'Abutting1to1':
-      info[2].append(["UserDefined", zdnrName, [], 'UserDefinedData_t'])
     return None
 
   def parallelDeduplicateNodesFSMesh(self):
@@ -2238,6 +2189,50 @@ def create_Quad4Quad(coordinates, nonconformal_faces, nonconformal_faces_ctr,tol
   listQuad4Quad = numpy.array(listQuad4Quad)
 
   return listQuad4Quad,0
+
+def _addBC2ZoneLoc(z, bndName, bndType, zbc, loc='FaceCenter', zdnrName=None):
+  s = bndType.split(':')
+  bndType1 = s[0]
+  if len(s) > 1: bndType2 = s[1]
+  else: bndType2 = ''
+
+  # Analyse zone zbc
+  dims = Internal.getZoneDim(zbc)
+  neb = dims[2] # nbre d'elts de zbc
+
+  eltType, nf = Internal.eltName2EltNo(dims[3]) # type d'elements de zbc
+  # On cherche l'element max dans les connectivites de z
+  maxElt = 0
+  connects = Internal.getNodesFromType(z, 'Elements_t')
+  for cn in connects:
+    r = Internal.getNodeFromName1(cn, 'ElementRange')
+    m = r[1][1]
+    maxElt = max(maxElt, m)
+  # on cree un nouveau noeud connectivite dans z1 (avec le nom de la zone z2)
+  nebb = neb
+  node = Internal.createUniqueChild(z, zbc[0], 'Elements_t', value=[eltType,nebb])
+  Internal.createUniqueChild(node, 'ElementRange', 'IndexRange_t',
+                           value=[maxElt+1,maxElt+neb])
+  oldc = Internal.getNodeFromName2(zbc, 'ElementConnectivity')[1]
+  newc = numpy.copy(oldc)
+  hook = C.createHook(z, 'nodes')
+  ids = C.identifyNodes(hook, zbc)
+  newc[:] = ids[oldc[:]-1]
+  Internal.createUniqueChild(node, 'ElementConnectivity', 'DataArray_t', value=newc)
+
+  zoneBC = Internal.createUniqueChild(z, 'ZoneBC', 'ZoneBC_t')
+  if len(s)==1:
+    info = Internal.createChild(zoneBC, bndName, 'BC_t', value=bndType)
+  else: # familyspecified
+    info = Internal.createChild(zoneBC, bndName, 'BC_t', value=bndType1)
+    Internal.createUniqueChild(info, 'FamilyName', 'FamilyName_t',
+                               value=bndType2)
+
+  Internal.createUniqueChild(info, 'GridLocation', 'GridLocation_t',
+                            value='FaceCenter')
+  Internal.createUniqueChild(info, 'ElementRange', 'IndexRange_t',
+                            value=numpy.array([[maxElt+1,maxElt+neb]]))
+  return None
 
 def isequal(a, b):
    return abs(a - b) < 1.e-10
