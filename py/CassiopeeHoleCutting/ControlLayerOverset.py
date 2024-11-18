@@ -121,7 +121,7 @@ def HoleMesh(clac,fsmesh,paraDict,wallBoundaryMarkers,offsets,meshID,offsetFromB
       xmax = BB[3]; ymax = BB[4]; zmax = BB[5]
       dmax = max((xmax-xmin), (ymax-ymin), (zmax-zmin))
       ppul = 100./dmax
-      print("Points per unit lenght=",ppul)
+      if Cmpi.rank == 0: print("Points per unit lenght=",ppul)
       bodies_offset[meshid] = D.offsetSurface(bodies_offset[meshid], offset=sign_offset*offsets[meshid-1], pointsPerUnitLength=ppul, algo=0, dim=3)[0]
       if Cmpi.rank == 0: C.convertPyTree2File(bodies_offset[meshid], "wall_offset_%s.plt" %meshid)
       bodies_offset[meshid] = C.convertArray2Tetra(bodies_offset[meshid])
@@ -155,7 +155,7 @@ def SurfaceBackgroundMesh(clac,fsmesh,paraDict,wallBoundaryMarkers,offsets,meshI
 
     # Extract only the wall for the blanking (surface mesh)
 
-    print(Cmpi.rank,"zonevalue",Internal.getValue(z_body))
+    if Cmpi.rank == 0: print(Cmpi.rank,"zonevalue",Internal.getValue(z_body))
     ER = Internal.getNodeFromName(z_body, "ElementRange")[1]
 
     if (ER[1] - ER[0] + 1) > 0:
@@ -180,7 +180,6 @@ def SurfaceBackgroundMesh(clac,fsmesh,paraDict,wallBoundaryMarkers,offsets,meshI
 
         tb2 = T.join(zones)
 
-  print("before all gather ")
   meshIDs = Cmpi.allgather(meshID)
   tb2 = Cmpi.allgatherZones(tb2)
   bodies = {}
@@ -199,7 +198,7 @@ def SurfaceBackgroundMesh(clac,fsmesh,paraDict,wallBoundaryMarkers,offsets,meshI
       xmax = BB[3]; ymax = BB[4]; zmax = BB[5]
       dmax = max((xmax-xmin), (ymax-ymin), (zmax-zmin))
       ppul = 100./dmax
-      print("Points per unit lenght=",ppul)
+      if Cmpi.rank == 0: print("Points per unit lenght=",ppul)
       bodies_offset[meshid] = D.offsetSurface(bodies_offset[meshid], offset=-offsets[meshid-1], pointsPerUnitLength=ppul, algo=0, dim=3)[0]
       C.convertPyTree2File(bodies_offset[meshid], "wall_OVERSET_%s.plt" %meshid)
       bodies_offset[meshid] = C.convertArray2Tetra(bodies_offset[meshid])

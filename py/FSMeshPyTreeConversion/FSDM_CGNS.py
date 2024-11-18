@@ -937,7 +937,7 @@ class Converter_FSDM_CGNS:
 
     base = Internal.newCGNSBase('Base', 3, 3, parent=self.pytree)
     self.nb_vertices = self.coordinatesX.shape[0]
-    print('Creating main zone and elements...')
+    if Cmpi.rank == 0: print('Creating main zone and elements...')
     pytree_zone = Internal.newZone(name = 'Zone1', zsize = [[self.nb_vertices,self.nb_cells_volume,0]], ztype = self.meshType, family = None, parent = base)
     #Create coordinate node
     pytree_coordinates_node = Internal.newGridCoordinates(parent = pytree_zone)
@@ -979,7 +979,7 @@ class Converter_FSDM_CGNS:
 
       np_boundary_markers_celltype_dict = {}
       if shared_markers !=[]:
-        print("markers associated with different surface element types:",shared_markers)
+        if Cmpi.rank == 0: print("markers associated with different surface element types:",shared_markers)
         val = 0
         for i,cell_type in enumerate(self.fs_surface_cell_types):
           n_cell_owned = self.fsmesh.GetNOwnedCells(cell_type)
@@ -1054,12 +1054,12 @@ class Converter_FSDM_CGNS:
 
   def recoverFlowSolution(self):
     if self.whichDatasets == []:
-        print("All the available datasets will be converted in the cgns pytree.")
+        if Cmpi.rank == 0: print("All the available datasets will be converted in the cgns pytree.")
 
     for datasetName in self.fsmesh.GetUnstructDatasetNames():
       nameAugState = str(datasetName)
       if nameAugState != "Coordinates" and (self.whichDatasets==[] or (nameAugState in self.whichDatasets)):
-          print("Dataset:",nameAugState)
+          if Cmpi.rank == 0: print("Dataset:",nameAugState)
           unstructDataset = self.fsmesh.GetUnstructDataset(nameAugState)
           flow_solution_values = unstructDataset.GetValues()
           flow_solution_names = unstructDataset.GetNames()
@@ -1459,7 +1459,7 @@ class Converter_FSDM_CGNS:
     del self.coordinatesX, self.coordinatesY, self.coordinatesZ, self.numpy_cell2node, self.numpy_cell2node_volume, self.numpy_cell2node_surface, self.numpy_range, self.indices_per_boundary
     del self.fsmesh, self.list_names_BCs,  self.fs_markers, self.boundary_marker_to_bc_name, self.boundary_marker_to_point_list, self.dict_bcs
 
-  def convertMonozoneME2Ngon4FFD(self,reorient=True,mergeOnProc0=False,tol=1e-6):
+  def convertMonozoneME2Ngon4FFD(self,reorient=True,tol=1e-6):
 
     if Internal.getZones(self.pytree) == []:
       if Cmpi.size==1:
@@ -1470,7 +1470,7 @@ class Converter_FSDM_CGNS:
     else:
       self.deleteUselessVariables()
     # breaking in one zone per type of volume element
-    print("Breaking connectivity..")
+    if Cmpi.rank == 0: print("Breaking connectivity..")
     t3 = C.breakConnectivity(self.pytree)
 
     # Attention: bug solved in Cassiopee 4.0 -> lines from 1130 to 1138 must be deleted with the new release
@@ -1485,14 +1485,14 @@ class Converter_FSDM_CGNS:
               ER_bc[1][0] = ER_el[1]
     C._deleteEmptyZones(t3)
 
-    print("Converting array 2 NGon..")
+    if Cmpi.rank == 0: print("Converting array 2 NGon..")
     # convert multielement in Ngon
     self.pytree = C.convertArray2NGon(t3,recoverBC=False)
     #self.pytree = G.close(self.pytree)
     C._deleteFlowSolutions__(t3)
 
     # save the BCs in the correct format for the recoverBC at the end of the function
-    print("Getting BCs..")
+    if Cmpi.rank == 0: print("Getting BCs..")
     (BCs,BCNames,BCTypes) = C.getBCs(t3)
     true_len_BCs = len(BCs)//len(Internal.getZones(t3))
 
@@ -1513,14 +1513,14 @@ class Converter_FSDM_CGNS:
         if Elt[0]!="NGonElements" and Elt[0]!="NFaceElements":
           Internal._rmNodesByName(z,Elt[0])
     #merging in one single zone
-    print("Merging in one single zone..")
+    if Cmpi.rank == 0: print("Merging in one single zone..")
     self.pytree = T.merge(self.pytree)
     #changing the names of the zone
     z = Internal.getZones(self.pytree)[0]
     z[0] = "zone."+str(Cmpi.rank)
 
     #recover BCs
-    print("Recovering BCs..")
+    if Cmpi.rank == 0: print("Recovering BCs..")
     if Cmpi.size > 1:
       list_BCs, list_BCNames, list_BCTypes = _recoverBCsC(self.pytree,(BCs,BCNames,BCTypes))
       list_BCs = Cmpi.allgather(list_BCs)
@@ -1551,75 +1551,19 @@ class Converter_FSDM_CGNS:
      if Cmpi.rank==0:
        print("Recovered all the BCs. %d/%d surface elements have a BC." %(n_assigned_bcs_total,n_cells_surface_total))
 
-    print("Reorienting..")
+    if Cmpi.rank == 0: print("Reorienting..")
     if reorient:
       XOR._reorient(self.pytree)
 
-    if mergeOnProc0:
-      print("Merging on proc 0..")
-      self.pytree = Cmpi.gatherZones(self.pytree,root=0)
-      self.pytree = C.newPyTree(['Base',self.pytree])
-      self.pytree = T.merge(self.pytree)
-      BCs_gathered = Cmpi.gather(BCs,root=0)
-      BCNames_gathered = Cmpi.gather(BCNames,root=0)
-      BCTypes_gathered = Cmpi.gather(BCTypes,root=0)
+    self.pytree = C.newPyTree(['Base', self.pytree])
 
-      if Cmpi.rank == 0:
-        for (BCs,BCNames,BCTypes) in zip( BCs_gathered,BCNames_gathered,BCTypes_gathered):
-          C._recoverBCs(self.pytree,(BCs,BCNames,BCTypes),removeBC=False)
-        BCnodes = Internal.getNodesFromType(self.pytree,"BC_t")
-        Internal._rmNodesFromType(self.pytree,"ZoneBC_t")
-        dictBCs = {}
-        dictBCsTypes = {}
-        for bcnode in BCnodes:
-            bcname = bcnode[0]
-            bctype = Internal.getValue(bcnode)
-            name_2 = bcname.split(".")[0]+"."+bcname.split(".")[1]
-            if not name_2 in dictBCs.keys():
-              dictBCs[name_2] = [bcnode]
-              dictBCsTypes[name_2] = bctype
-            else:
-              dictBCs[name_2].append(bcnode)
-        for key in dictBCs.keys():
-          PLs = Internal.getNodesFromName(dictBCs[key],"PointList")
-          new_PL = numpy.empty(0,dtype=int)
-          for PL in PLs:
-              new_PL = numpy.concatenate([new_PL,PL[1][0]])
-          #C._addBC2Zone(self.pytree,key,"FamilySpecified:"+key,faceList=new_PL)
-          C._addBC2Zone(self.pytree,key,dictBCsTypes[key],faceList=new_PL)
-          dictFS = {}
-          fscs = Internal.getNodesFromType(dictBCs[key], "BCDataSet_t")
-
-          if fscs != []:
-            for fsc in fscs:
-              fsc_arrays = Internal.getNodesFromType(fsc,"DataArray_t")
-              for fsc_array in fsc_arrays:
-                if not fsc_array[0] in dictFS.keys():
-                  dictFS[fsc_array[0]] = fsc_array[1]
-                else:
-                  dictFS[fsc_array[0]] = numpy.concatenate([dictFS[fsc_array[0]],fsc_array[1]])
-
-            newNameOfBC = C.getLastBCName(key)
-            bcz = Internal.getNodeFromName(self.pytree, newNameOfBC)
-            ds = Internal.newBCDataSet(name='BCDataSet', value='UserDefined',
-                                   gridLocation='FaceCenter', parent=bcz)
-            d = Internal.newBCData('NeumannData', parent=ds)
-            for key_FS in dictFS.keys():
-              Internal._createUniqueChild(d, key_FS, "DataArray_t",value=dictFS[key_FS])
-      else:
-          self.pytree = Internal.newZone(name = "empty",zsize=[[0,0]],ztype="Unstructured")
-
-      self.pytree = C.newPyTree(['Base', self.pytree])
-    else:
-      self.pytree = C.newPyTree(['Base', self.pytree])
-
-    print("Fixing Flow Solution..")
+    if Cmpi.rank == 0: print("Fixing Flow Solution..")
     if self.keepFlowSolution: _fixNodesForFlowSolution(self.pytree)
 
     return None
 
   def merge_BCs_std(self,tol=1e-11):
-      print("Merging BCs: one BC per boundary marker")
+      if Cmpi.rank == 0: print("Merging BCs: one BC per boundary marker")
       t = self.pytree
       BCnodes = Internal.getNodesFromType(t, 'BC_t')
       family_names = []
@@ -1656,7 +1600,7 @@ class Converter_FSDM_CGNS:
       return None
 
   def merge_BCs_FamilySpecified(self):
-      print("Specifying FamilySpecified BCs: one FamilyName per boundary marker")
+      if Cmpi.rank == 0: print("Specifying FamilySpecified BCs: one FamilyName per boundary marker")
       t = self.pytree
       BCs = []
       BCnodes = Internal.getNodesFromType(t, 'BC_t')
