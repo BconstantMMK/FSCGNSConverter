@@ -70,7 +70,7 @@ python-tests:
     - spack load cassiopee
     - cd examples
     - python howToUseFSMeshPyTreeConversionFSMeshImport.py
-    # - mpirun -np 4 python howToUseFSMeshPyTreeConversionFSDM2CGNSNGON.py # Apparently this test does not work with Cassiopée 3.5
+    - mpirun -np 4 python howToUseFSMeshPyTreeConversionFSDM2CGNSNGON.py
   artifacts:
     when: always
     paths:
