@@ -28,6 +28,7 @@ configure:
     - python3 --version
     - which g++
     - g++ --version
+    - export LIBRARY_PATH=$(readlink -f /opt/fs/*/*/gettext*/lib/):$LIBRARY_PATH
     - ./waf configure --disable-fsconfig --prefix=${INSTALL_PATH}
   artifacts:
     when: always
