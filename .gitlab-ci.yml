@@ -1,4 +1,4 @@
-image: as-01gitlab01l.as.bs.dlr.de:5550/sp/flowsim-registry/fsdm:develop-ubuntu20.04
+image: AS-01Gitlab01l.as.bs.dlr.de:5550/sp/flowsim-registry/fsdm/fsdm:develop-ubuntu20.04-spack0.19-x86_64-v3
 
 default:
   before_script:
@@ -65,7 +65,7 @@ python-tests:
   needs:
     - install
   script:
-    - spack install cassiopee
+    - spack install cassiopee@3.7F
     - spack load cassiopee
     - cd examples
     - python howToUseFSMeshPyTreeConversionFSMeshImport.py
