@@ -22,7 +22,7 @@ configure:
   script:
     - echo ${INSTALL_PATH}
     - ls /builds/shared-fs-plugins
-    - spack install cassiopee
+    - spack install cassiopee@3.7F
     - spack load cassiopee
     - which python
     - python3 --version
