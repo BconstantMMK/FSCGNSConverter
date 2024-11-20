@@ -23,12 +23,13 @@ configure:
     - echo ${INSTALL_PATH}
     - ls /builds/shared-fs-plugins
     - spack install cassiopee@3.7F
+    - spack config add modules:prefix_inspections:lib:[LIBRARY_PATH]
+    - spack config add modules:prefix_inspections:lib64:[LIBRARY_PATH]
     - spack load cassiopee
     - which python
     - python3 --version
     - which g++
     - g++ --version
-    - export LIBRARY_PATH=$(readlink -f /opt/fs/*/*/gettext*/lib/):$LIBRARY_PATH
     - ./waf configure --disable-fsconfig --prefix=${INSTALL_PATH}
   artifacts:
     when: always
