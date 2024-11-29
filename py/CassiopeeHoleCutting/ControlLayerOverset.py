@@ -109,19 +109,34 @@ def HoleMesh(clac,fsmesh,paraDict,wallBoundaryMarkers,offsets,meshID,offsetFromB
     #meshid = meshID
     if meshid not in bodies.keys():
       bodies[meshid] = zone
+      bodies[meshid] = G.close(bodies[meshid])
     else:
       bodies[meshid] = T.join(bodies[meshid],zone)
       bodies[meshid] = G.close(bodies[meshid])
+
   bodies_offset = bodies.copy()
   sign_offset = 1. if offsetFromBC=="BCWall" else -1.
+
   for meshid in bodies_offset.keys():
 
+      ycoords = Internal.getNodeFromName(bodies_offset[meshid],"CoordinateY")[1]
+      if len(numpy.unique(numpy.round(ycoords *10**8)/(10**8))) == 2: dimPb = 2
+      else: dimPb = 3
       BB = G.bbox(bodies_offset[meshid])
       xmin = BB[0]; ymin = BB[1]; zmin = BB[2]
       xmax = BB[3]; ymax = BB[4]; zmax = BB[5]
-      dmax = max((xmax-xmin), (ymax-ymin), (zmax-zmin))
-      ppul = 100./dmax
-      if Cmpi.rank == 0: print("Points per unit lenght=",ppul)
+      if dimPb == 3:
+          dmax = max((xmax-xmin), (ymax-ymin), (zmax-zmin))
+          dmin = min((xmax-xmin), (ymax-ymin), (zmax-zmin))
+      else:
+          dmax = max((xmax-xmin), (zmax-zmin))
+          dmin = min((xmax-xmin), (zmax-zmin))
+
+      ppul = 20./dmin
+
+      if Cmpi.rank == 0: print("Points per unit lenght=",ppul, " dmax=",dmax, " dmin=",dmin)
+
+      if Cmpi.rank == 0: C.convertPyTree2File(bodies_offset[meshid], "wall_beforeoffset_%s.plt" %meshid)
       bodies_offset[meshid] = D.offsetSurface(bodies_offset[meshid], offset=sign_offset*offsets[meshid-1], pointsPerUnitLength=ppul, algo=0, dim=3)[0]
       if Cmpi.rank == 0: C.convertPyTree2File(bodies_offset[meshid], "wall_offset_%s.plt" %meshid)
       bodies_offset[meshid] = C.convertArray2Tetra(bodies_offset[meshid])
@@ -204,7 +219,7 @@ def SurfaceBackgroundMesh(clac,fsmesh,paraDict,wallBoundaryMarkers,offsets,meshI
       bodies_offset[meshid] = C.convertArray2Tetra(bodies_offset[meshid])
       bodies_offset[meshid] = G.close(bodies_offset[meshid])
   #offset_tb2 = C.newPyTree(["bodies",list(bodies.values())])
-  return bodies, bodies_offset
+  return bodies_offset
 
 def BackgroundMesh(clac,fsmesh,meshID):
   if meshID == 0:
