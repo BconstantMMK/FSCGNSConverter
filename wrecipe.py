@@ -10,7 +10,7 @@ FlowSimulator Package, in particular it defines
 """
 
 VERSION='0.0.1'
-APPNAME='FSMeshPytTreeConversion'
+APPNAME='FSMeshPyTreeConversion'
 
 # For which files to call doxygen
 DoxygenConfigs = []
@@ -56,9 +56,8 @@ int main(void)
 
 def detect_cassiopee(conf, env,*args, **kw):
     try: import KCore as K
-    except: return false
-    
+    except: return False
     env.VERSION_cassiopee = K.__version__
     print("Found Cassiopée version: " + env.VERSION_cassiopee)
     return True
-    
+
