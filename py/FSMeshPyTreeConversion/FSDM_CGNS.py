@@ -2040,7 +2040,10 @@ def create_Quad2Quad(coordinates, nonconformal_faces, nonconformal_faces_ctr,pla
     big_face_concatenated = big_face_concatenated[big_face_concatenated!=nd1]
     big_face_concatenated = big_face_concatenated[big_face_concatenated!=nd2]
 
-    hns.append([nd1,nd2])
+    if nonconformal_faces[el1][1] == nd1:
+        hns.append([nd2,nd1])
+    else:
+        hns.append([nd1,nd2])
     big_face.append(big_face_concatenated)
 
   for idx,nodes in enumerate(big_face):
@@ -2112,21 +2115,21 @@ def create_Quad4Quad(coordinates, nonconformal_faces, nonconformal_faces_ctr,tol
     for position in list_nodes_B4B:
       position_point8 = numpy.where(position==point8)[0][0]
       if position_point8 == 0:
-          point5 = position[1]
-          point2 = position[2]
+          point7 = position[1]
+          point3 = position[2]
           point6 = position[3]
       elif position_point8 == 1:
-          point7 = position[0]
+          point5 = position[0]
           point6 = position[2]
-          point3 = position[3]
+          point2 = position[3]
       elif position_point8 == 2:
-          point0 = position[0]
+          point1 = position[0]
           point4 = position[1]
-          point7 = position[3]
+          point5 = position[3]
       elif position_point8 == 3:
           point4 = position[0]
-          point1 = position[1]
-          point5 = position[2]
+          point0 = position[1]
+          point7 = position[2]
 
     listQuad4Quad.append([ point0, point1, point2, point3, point4, point5, point6, point7, point8])
 
