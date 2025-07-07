@@ -1,0 +1,8 @@
+__pycache__
+*.plt
+*.cgns
+*.txt
+*.dat
+*.h5
+*.grid
+Data_*
