@@ -1,14 +1,16 @@
-import os, sys
+import os
+import sys
 
-# import the stuff we need from FSDM
-import FSDM
-from FSDataManager import FSClac, FSLog, FSError, FSMesh, FSMeshEnums, FSString, FSIntArray, FSFloatArray, FSStringArray
-from FSDataManager import FSUnstructCellTypes, FSDMIterator, FSCellTypeSet
+from FSDataManager import (
+    FSClac, FSLog, FSError, FSMesh, FSMeshEnums,
+    FSString, FSIntArray, FSFloatArray, FSStringArray,
+    FSUnstructCellTypes, FSDMIterator, FSCellTypeSet
+)
 
 def CompareMeshes(meshRef, meshCmp, checkDatasets=False, checkCellAttributes=False):
     clac = meshRef.GetClac()
 
-    FSLog(clac, 0, "Comparing meshes") 
+    FSLog(clac, 0, "Comparing meshes")
 
     celltypesRef =  meshRef.GetCellTypeArray()
     celltypesCmp =  meshCmp.GetCellTypeArray()
@@ -20,14 +22,14 @@ def CompareMeshes(meshRef, meshCmp, checkDatasets=False, checkCellAttributes=Fal
     for ct in FSDMIterator(celltypesRef):
         if not meshCmp.HasCellType(ct):
             FSError("Comparing meshes: celltypes differ")
-            return False   
+            return False
 
         if meshRef.GetNGlobalCells(ct) != meshCmp.GetNGlobalCells(ct):
             FSError("Comparing meshes: Number of global cells in a cell pool differ")
-            return False 
+            return False
         if meshRef.GetNOwnedCells(ct) != meshCmp.GetNOwnedCells(ct):
             FSError("Comparing meshes: Number of owned cells in a cell pool differ")
-            return False 
+            return False
 
     if checkDatasets:
         datasetNamesRef = meshRef.GetUnstructDatasetNames()
@@ -40,15 +42,15 @@ def CompareMeshes(meshRef, meshCmp, checkDatasets=False, checkCellAttributes=Fal
         for name in FSDMIterator(datasetNamesRef):
             if not meshCmp.HasUnstructDataset(name):
                 FSError("Comparing meshes: Names of datasets differ")
-                return False   
+                return False
 
             if meshRef.GetUnstructDataset(name).GetDatasetInfo() != meshCmp.GetUnstructDataset(name).GetDatasetInfo():
                 FSError("Comparing meshes: Dataset info differs")
-                return False 
+                return False
 
             if meshRef.GetUnstructDataset(name).GetValues().Size(0) != meshCmp.GetUnstructDataset(name).GetValues().Size(0):
                 FSError("Comparing meshes: Dataset values size0 differs")
-                return False 
+                return False
             if meshRef.GetUnstructDataset(name).GetValues().Size(1) != meshCmp.GetUnstructDataset(name).GetValues().Size(1):
                 FSError("Comparing meshes: Dataset values size1 differs")
 
@@ -65,7 +67,7 @@ def CompareMeshes(meshRef, meshCmp, checkDatasets=False, checkCellAttributes=Fal
             for name in FSDMIterator(attribNamesRef):
                 if not meshCmp.HasCellAttribute(ctname):
                     FSError("Comparing meshes: Names of cell attributes in a cell pool differ")
-                    return False   
+                    return False
 
-    FSLog(clac, 0, "Successful") 
+    FSLog(clac, 0, "Successful")
     return True

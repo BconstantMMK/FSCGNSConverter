@@ -1,0 +1,9 @@
+#! /bin/sh
+./clean
+
+set -e
+
+# Run examples in the right sequence
+kpython -n1 howToUseFSCGNSConverterFSMeshImport.py
+kpython -n1 howToUseFSCGNSConverterConvertCGNS2FSDM.py
+kpython -n1 howToUseFSCGNSConverterConvertFSDM2CGNS4FFD.py
