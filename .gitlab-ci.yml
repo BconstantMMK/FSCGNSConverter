@@ -70,8 +70,8 @@ python-tests:
     - spack install cassiopee@3.7F
     - spack load cassiopee
     - cd examples
-    - python howToUseFSMeshPyTreeConversionFSMeshImport.py
-    - mpirun -np 4 python howToUseFSMeshPyTreeConversionFSDM2CGNSNGON.py
+    - ./clean
+    - ./run
   artifacts:
     when: always
     paths:

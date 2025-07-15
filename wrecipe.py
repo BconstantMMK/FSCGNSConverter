@@ -10,7 +10,7 @@ FlowSimulator Package, in particular it defines
 """
 
 VERSION='0.0.1'
-APPNAME='FSMeshPyTreeConversion'
+APPNAME='FSCGNSConverter'
 
 # For which files to call doxygen
 DoxygenConfigs = []
