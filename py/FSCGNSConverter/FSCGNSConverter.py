@@ -814,9 +814,9 @@ class FSCGNSConverter:
 
         n_bcs = Internal.getNodesFromType1(n_zoneBCs, "BC_t")
         if len(self.bcsNames) != len(n_bcs):
-            print(f"ERROR: Number of BCs in CGNS mesh, {len(n_bcs)}, does not "
+            print(f"WARNING: Number of BCs in CGNS mesh, {len(n_bcs)}, does not "
                   f"match the number of BCs in bcsNames, {len(self.bcsNames)}.")
-            sys.exit(1)
+            #sys.exit(1)
 
         # Loop over all existing conformal BC nodes (IndexArray or IndexRange)
         # and offset vertex indices by the number of volume cells
@@ -943,7 +943,7 @@ class FSCGNSConverter:
             z = zones[0]
             for noz in range(novol, len(zones)):
                 z = T.join([z, zones[noz]])
-            #z = T.join(zones) # TODO this deletes BC unfortunately
+            #z = T.join(zones) # TODO this deletes BCs unfortunately
 
             n_zoneBCs = Internal.getNodesFromType1(z, 'ZoneBC_t')
             n_bcs = Internal.getNodesFromType1(n_zoneBCs, 'BC_t')
@@ -955,7 +955,6 @@ class FSCGNSConverter:
                         self.bcsNames.append(n_bc[0].replace('.', ''))
                     else:
                         self.bcsNames.append(n_bc[0].split(".")[0])
-                print("self.bcsNames", self.bcsNames)
             else:  # "Structured"
                 zbcs = []; bcTypes = []; bcs = []
                 for n_bc in n_bcs:

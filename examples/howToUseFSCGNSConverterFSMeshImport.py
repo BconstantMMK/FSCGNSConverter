@@ -1,11 +1,7 @@
 import os
 import sys
 
-from FSDataManager import (
-    FSClac, FSLog, FSError, FSMesh, FSMeshEnums,
-    FSString, FSIntArray, FSFloatArray, FSStringArray,
-    FSUnstructCellTypes
-)
+from FSDataManager import FSClac, FSLog, FSError, FSMesh
 
 from FSCGNSConverter.FSCGNSConverter import FSCGNSConverter
 from utils import CompareMeshes
@@ -33,14 +29,14 @@ bcDict = {
 
 FSLog(clac, 0, "------ Conversion FSDM -> CGNS -------")
 
-convObj = FSCGNSConverter("mesh.grid", bcDict=bcDict)
-convObj.convert2CGNS()
+convObj = FSCGNSConverter(meshName="mesh.grid", bcDict=bcDict)
+convObj.convert()
 convObj.export(filename="mesh.cgns")
 
 FSLog(clac, 0, "------ Conversion CGNS -> FSDM -------")
 
-convObj = FSCGNSConverter("mesh.cgns")
-convObj.convert2FSDM()
+convObj = FSCGNSConverter(meshName="mesh.cgns")
+convObj.convert()
 convObj.export(filename="mesh.h5")
 
 FSLog(clac, 0, "------ Conversions done -------")

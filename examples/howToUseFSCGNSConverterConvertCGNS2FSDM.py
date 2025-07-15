@@ -2,16 +2,9 @@ import os
 import sys
 
 import Converter.PyTree as C
-import Converter.Internal as Internal
-import Transform.PyTree as T
 import Generator.PyTree as G
-import Post.PyTree as P
 
-from FSDataManager import (
-    FSClac, FSLog, FSError, FSMesh, FSMeshEnums,
-    FSString, FSIntArray, FSFloatArray, FSStringArray,
-    FSUnstructCellTypes
-)
+from FSDataManager import FSClac, FSLog, FSError, FSMesh
 
 from FSCGNSConverter.FSCGNSConverter import FSCGNSConverter
 
@@ -48,16 +41,16 @@ t = C.addBC2Zone(t, 'wall6', 'BCWall', 'kmax')
 # initialize arbitrary data that can be checked in future
 def F(x, y):
     return x * y
-t = C.initVars(t, 'DataValues', F, ['CoordinateX','CoordinateY'])
-t = C.initVars(t, 'centers:DataValues', F, ['centers:CoordinateX','centers:CoordinateY'])
+C._initVars(t, 'DataValues', F, ['CoordinateX','CoordinateY'])
+C._initVars(t, 'centers:DataValues', F, ['centers:CoordinateX','centers:CoordinateY'])
 
 C.convertPyTree2File(t, 'mesh.cgns')
 
 FSLog(clac, 0, "------ Conversion CGNS -> FSDM -------")
 
 convObj = FSCGNSConverter(meshName="mesh.cgns")
-convObj.convert2FSDM()
-convObj.exportFSMesh(filename="mesh.h5")
+convObj.convert()
+convObj.export(filename="mesh.h5")
 
 FSLog(clac, 0, "------ Conversion done -------")
 
