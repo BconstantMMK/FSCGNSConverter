@@ -9,17 +9,18 @@ increased performance.
 <br>
 
 ## Table of Contents
-1. [Repository structure](#1-repository-structure)  
-2. [Cloning a module](#2-cloning-a-module)  
-2.1 [Main branch](#21-main-branch)  
-2.2 [Dev branch](#22-dev-branch)  
-2.3 [User dev branches](#23-user-dev-branches)  
-2.4 [PYTHONPATH variable](#24-pythonpath-variable)  
-3. [Pulling updates](#3-pulling-updates)  
-3.1 [Resolving conflicts](#31-resolving-conflicts)
-4. [Contributing to a module](#4-contributing-to-a-module)  
-5. [Merging your contributions](#5-merging-your-contributions)  
-6. [Managing remotes](#6-managing-remotes)
+1. [API](#1-api)  
+1.1 [Instantiation](#11-instantiation)  
+1.2 [FSCGNSConverter class methods](#12-fscgnsconverter-class-methods)  
+1.2.1 [Conversion](#121-conversion)  
+1.2.2 [Export](#122-export)  
+1.3 [FSCGNSConverter class attributes](#13-fscgnsconverter-class-attributes)  
+
+2. [Examples](#2-examples)  
+2.1 [Conversion from h5 to cgns](#21-conversion-from-h5-to-cgns)  
+2.2 [Conversion from cgns to h5](#22-conversion-from-cgns-to-h5)  
+2.2.1 [Using a filename](#221-using-a-filename)  
+2.2.1 [From a CGNS tree](#222-from-a-cgns-tree)  
 
 <br>
 
@@ -98,14 +99,6 @@ When exporting the CGNS PyTree or the FS mesh, the keyworded arguments are:
 
 After calling the `convert` function, the CGNS pyTree or the FS mesh can be obtained with:
 
-```py
-t = convObj.pyTree
-fsmesh = convObj.fsmesh
-```
-
-### 1.4 FSCGNSConverter class attributes
-
-After calling one of the `convert` functions, the CGNS pyTree or the FS mesh can be obtained with:
 ```py
 t = convObj.pyTree
 fsmesh = convObj.fsmesh
