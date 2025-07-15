@@ -135,7 +135,7 @@ convObj.export(filename="t.cgns", verbose=True)
 
 #### 2.2.1 Using a filename 
 
-In this example, an cgns file is converted to h5 format.
+In this example, a CGNS file is converted to h5 format.
 
 ```py
 from FSCGNSConverter.FSCGNSConverter import FSCGNSConverter
@@ -155,7 +155,7 @@ convObj.export(filename="mesh.h5", verbose=True)
 
 #### 2.2.2 From a CGNS tree 
 
-In this example, an cgns tree is converted to h5 format and saved to tecplot format.
+In this example, a CGNS tree is converted to h5 format and saved to tecplot format.
 
 ```py
 import Converter.PyTree as C
@@ -167,7 +167,7 @@ caseConfig = {
     # list of optional arguments
 }
 
-convObj = FSCGNSConverter(meshName=t, **caseConfig)
+convObj = FSCGNSConverter(pyTree=t, **caseConfig)
 convObj.convert()
 
 # Save to tecplot format
