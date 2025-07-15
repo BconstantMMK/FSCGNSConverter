@@ -28,7 +28,7 @@ increased performance.
 
 The API of the FSCGNSConverter class is given below and includes  
   - constructor arguments: a list of mandatory and optional parameters required to create an instance of the class;  
-  - public methods: the functions that can be called on the instance.
+  - public methods/attributes: the functions/variables that can be called on the instance.
 
 ### 1.1 Instantiation
 
@@ -118,17 +118,17 @@ In this example, an h5 file is converted to cgns format.
 ```py
 from FSCGNSConverter.FSCGNSConverter import FSCGNSConverter
 
-meshFilename = "mesh.h5"
+meshName = "mesh.h5"
 caseConfig = {
     # list of optional arguments
 }
 
-convObj = FSCGNSConverter(meshName=meshFilename, **caseConfig)
+convObj = FSCGNSConverter(meshName=meshName, **caseConfig)
 convObj.convert()
 
 # Get the CGNS tree or export the CGNS mesh
 t = convObj.pyTree
-convObj.exportCGNSMesh(filename="t.cgns", verbose=True)
+convObj.export(filename="t.cgns", verbose=True)
 ```
 
 ### 2.2 Conversion from cgns to h5
@@ -140,17 +140,17 @@ In this example, an cgns file is converted to h5 format.
 ```py
 from FSCGNSConverter.FSCGNSConverter import FSCGNSConverter
 
-meshFilename = "mesh.cgns"
+meshName = "mesh.cgns"
 caseConfig = {
     # list of optional arguments
 }
 
-convObj = FSCGNSConverter(meshName=meshFilename, **caseConfig)
+convObj = FSCGNSConverter(meshName=meshName, **caseConfig)
 convObj.convert()
 
 # Get the FS mesh or export the FS mesh
 fsmesh = convObj.fsmesh
-convObj.exportFSMesh(filename="mesh.h5", verbose=True)
+convObj.export(filename="mesh.h5", verbose=True)
 ```
 
 #### 2.2.2 From a CGNS tree 
@@ -161,15 +161,15 @@ In this example, an cgns tree is converted to h5 format and saved to tecplot for
 import Converter.PyTree as C
 from FSCGNSConverter.FSCGNSConverter import FSCGNSConverter
 
-meshFilename = "mesh.cgns"
-t = C.convertFile2PyTree(meshFilename)
+meshName = "mesh.cgns"
+t = C.convertFile2PyTree(meshName)
 caseConfig = {
     # list of optional arguments
 }
 
 convObj = FSCGNSConverter(meshName=t, **caseConfig)
-convObj.convert2FSDM()
+convObj.convert()
 
 # Save to tecplot format
-convObj.exportFSMesh2Tecplot(filename="mesh.plt")
+convObj.export(filename="mesh.plt")
 ```
