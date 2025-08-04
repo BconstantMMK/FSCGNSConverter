@@ -11,10 +11,10 @@ increased performance.
 ## Table of Contents
 1. [API](#1-api)  
 1.1 [Instantiation](#11-instantiation)  
-1.2 [FSCGNSConverter class methods](#12-fscgnsconverter-class-methods)  
+1.2 [Class methods](#12-class-methods)  
 1.2.1 [Conversion](#121-conversion)  
 1.2.2 [Export](#122-export)  
-1.3 [FSCGNSConverter class attributes](#13-fscgnsconverter-class-attributes)  
+1.3 [Class attributes](#13-class-attributes)  
 
 2. [Examples](#2-examples)  
 2.1 [Conversion from h5 to cgns](#21-conversion-from-h5-to-cgns)  
@@ -68,7 +68,7 @@ convObj = FSCGNSConverter(
 
 NB: Input arguments `inmemory`, `keepFlowSolution` and `IBM` were deleted.
 
-### 1.2 FSCGNSConverter class methods
+### 1.2 Class methods
 
 #### 1.2.1 Conversion
 
@@ -95,7 +95,7 @@ The output format is inferred from the filename's extension.
 When exporting the CGNS PyTree or the FS mesh, the keyworded arguments are:
  - `verbose`: `bool`, print CGNS tree / FS mesh info (default: `True`)
 
-### 1.3 FSCGNSConverter class attributes
+### 1.3 Class attributes
 
 After calling the `convert` function, the CGNS pyTree or the FS mesh can be obtained with:
 
