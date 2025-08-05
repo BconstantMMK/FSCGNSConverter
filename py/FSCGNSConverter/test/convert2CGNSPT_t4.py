@@ -21,11 +21,10 @@ convObj.convert()
 test.testT(convObj.pyTree, 1)
 
 # - coordsName
+Internal.__GridCoordinates__ = "DeformedCoordinates"
 t = G.cartHexa((0., 0., 0.), (1., 1., 1.), (N, N, N))
-n_coords = Internal.getNodeFromType(t, "GridCoordinates_t")
-n_coords[0] = "Deformed" + n_coords[0]
-C.convertPyTree2File(t, meshName)  # TODO crashes because of "Deformed"
-convObj = FSCGNSConverter(meshName=meshName, coordsName="DeformedCoordinates")
+C.convertPyTree2File(t, meshName)
+convObj = FSCGNSConverter(meshName=meshName, coordsName=Internal.__GridCoordinates__)
 convObj.convert()
 test.testT(convObj.pyTree, 2)
 

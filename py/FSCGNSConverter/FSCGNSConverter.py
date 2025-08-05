@@ -992,10 +992,14 @@ class FSCGNSConverter:
 
         # Read CGNS mesh
         if self.pyTree is None:
-            if Cmpi.size > 1:
-                self.pyTree = Cmpi.convertFile2PyTree(self.meshName, proc=Cmpi.rank)
-            else:
+            if Cmpi.size == 1:
                 self.pyTree = C.convertFile2PyTree(self.meshName)
+            else:
+                self.pyTree = Cmpi.convertFile2PyTree(self.meshName, proc=Cmpi.rank)
+                bases = Internal.getBases(self.pyTree)
+                if len(bases) != Cmpi.size:
+                    import XCore.PyTree as XC
+                    self.pyTree = XC.loadAndSplitElt(self.meshName)
 
         # Delete empty bases from the pyTree
         emptyBaseNames = []
