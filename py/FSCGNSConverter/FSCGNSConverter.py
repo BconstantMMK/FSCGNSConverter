@@ -2173,7 +2173,6 @@ class FSCGNSConverter:
 
         fs_coords = self.fsmesh.GetUnstructDataset("Coordinates").GetValues()
         np_coords = numpy.array(fs_coords.Buffer(), copy=True)
-        np_coords = numpy.around(np_coords, decimals=decimals)
         np_coords = ArrayOps.Gather(np_coords, self.clac)
 
         uniqueCoords = numpy.empty((0,3))
@@ -2183,7 +2182,7 @@ class FSCGNSConverter:
         rank = self.clac.GetProcID()
         if rank == 0:
             # Use lexicographical order to sort by z, then y, then x
-            lexOrder = numpy.lexsort((np_coords[:,0], np_coords[:,1], np_coords[:,2]))
+            lexOrder = numpy.lexsort(numpy.around(np_coords, decimals=decimals).T)
             np_sortedCoords = np_coords[lexOrder]
             nvertices = len(np_sortedCoords)
             toc = time.perf_counter()
