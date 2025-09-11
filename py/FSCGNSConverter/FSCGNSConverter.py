@@ -922,12 +922,12 @@ class FSCGNSConverter:
         return z_octreeFaces
 
     @profile_time
-    def prepareCGNSConnectivities(self): # TODO split struct and unstruct - too much of a mess
+    def prepareCGNSConnectivities(self): # TODO split struct and unstruct
         """
         Structured meshes:
 
         Unstructured meshes:
-            Merge connectivities such there is at most one connectivity per element type 
+            Merge connectivities such that there is at most one connectivity per element type 
         """
         eltTypeList = []
         if self.meshType == "Structured":
@@ -1062,11 +1062,11 @@ class FSCGNSConverter:
 
             self.fsCellTypes = self.fsVolumeCellTypes + self.fsSurfaceCellTypes
 
-        Cmpi.barrier()
-        gath_fsCellTypes = Cmpi.allgather(self.fsCellTypes)
-        gath_fsCellTypes = list({x for v in gath_fsCellTypes for x in v})
-        if zones == []:
-            self.fsCellTypes = gath_fsCellTypes
+        #Cmpi.barrier()
+        #gath_fsCellTypes = Cmpi.allgather(self.fsCellTypes)
+        #gath_fsCellTypes = list({x for v in gath_fsCellTypes for x in v})
+        #if zones == []:
+        #    self.fsCellTypes = gath_fsCellTypes
         return
 
     @profile_time
@@ -2643,7 +2643,7 @@ class FSCGNSConverter:
             print("cellType:", cellType, ", eltRange[1]:", eltRange[1])
 
         # Loop over all CGNS BC nodes and offset vertex point lists
-        # using the difference between new and old TODO are they vertex point list ??
+        # using the difference between new and old TODO are they vertex point list?
         n_bcs = Internal.getNodesFromType(self.pyTree, "BC_t")
         origRangeTri = cellType2RangeDict.get(5)
         newRangeTri = newCellType2RangeDict.get(5)
