@@ -578,7 +578,9 @@ class FSCGNSConverter:
         else:
             self.bcDict = {int(k): v for k, v in bcDict.items()}
             for marker in self.bcDict:
-                if isinstance(self.bcDict[marker], str):
+                if isinstance(self.bcDict[marker], tuple):
+                    self.bcDict[marker] = list(self.bcDict[marker])
+                elif isinstance(self.bcDict[marker], str):
                     self.bcDict[marker] = [None, self.bcDict[marker]]
                 lenD = len(self.bcDict[marker])
                 if lenD == 1: self.bcDict[marker].insert(0, None)

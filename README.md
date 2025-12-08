@@ -62,7 +62,7 @@ convObj = FSCGNSConverter(
 | conformal | | bool | True | Whether the mesh presents hanging nodes |
 | IBMParameters | IBM_parameters | dict | None | Dictionary of IBM parameters |
 | datasets | whichDatasets | str, list or set | 'all' | Names of the datasets to consider during conversion |
-| bcDict | dict_BCs | dict | None | Dictionary mapping FS BC indices to CGNS BC families |
+| bcDict | dict_BCs | dict | None | Dictionary mapping FS BC markers to pairs of CGNS BC names and types |
 | coordsName | coords_name  | str | "Coordinates" | Name of the Coordinates field |
 | verbose | x | bool | True | Whether to display the step-by-step script progression |
 
@@ -129,6 +129,19 @@ convObj.convert()
 # Get the CGNS tree or export the CGNS mesh
 t = convObj.pyTree
 convObj.export(filename="t.cgns", verbose=True)
+```
+
+When there are boundary conditions, a mapping between FS marker indices and 
+CGNS BC types is required in the form of a `bcDict` dictionary. A BC name can 
+be renamed by providing a pair `[BCName, BCType]` instead of a `BCType` string.
+
+```py
+bcDict = {
+    "1": ["myInlet", "BCInflow"],  # BC name given (max. 32 chars), has precedence over name in the input file
+    "2": "BCWallInviscid",
+    "3": "BCFarfield",
+    "4": "BCOutflow"
+}
 ```
 
 ### 2.2 Conversion from cgns to h5
