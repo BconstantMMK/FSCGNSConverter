@@ -577,6 +577,18 @@ class FSCGNSConverter:
             self.bcDict = {}
         else:
             self.bcDict = {int(k): v for k, v in bcDict.items()}
+            for marker in self.bcDict:
+                if isinstance(self.bcDict[marker], str):
+                    self.bcDict[marker] = [None, self.bcDict[marker]]
+                lenD = len(self.bcDict[marker])
+                if lenD == 1: self.bcDict[marker].insert(0, None)
+                elif lenD == 0 or lenD > 2:
+                    raise ValueError(
+                        "Invalid bcDict argument. Dictionary values can either "
+                        "be a BCType (str) or a list containing "
+                        "(BCName, BCType). When a BCName is provided, it "
+                        "overrides the name present in the input file."
+                    )
         self.coordsName = coordsName
         self.verbose = verbose
 
@@ -1773,11 +1785,11 @@ class FSCGNSConverter:
             nFacesPerBC = len(self.cell2NodeSurfaceList[i])//nvpe
             cgnsEltNo = FSCGNSConverter.FS2CGNSCELLNOS[fsCellType]
             cgnsCellType = Internal.eltNo2EltName(cgnsEltNo)[0]
-            bcname = "{}.{}_{}".format(
-                self.bcsNames[i].split(".")[0],
-                cgnsCellType,
-                int(self.fsMarkers[i])
-            )
+            # FS bcname in self.bcsNames can be overriden by self.bcDict
+            bcname, bctype = self.bcDict[self.fsMarkers[i]]
+            if bcname is None: bcname = self.bcsNames[i].split(".")[0]
+            bcname = f"{bcname}.{cgnsCellType}_{int(self.fsMarkers[i])}"
+            bcname = bcname[-32:]  # limitation of the CGNS format
             Internal.newElements(
                 name=bcname,
                 etype=cgnsCellType,
@@ -1787,7 +1799,6 @@ class FSCGNSConverter:
                 parent=zone
             )
 
-            bctype = self.bcDict[self.fsMarkers[i]]
             C._addBC2Zone(
                 zone, bcname, bctype,
                 elementRange=[ntotCells, ntotCells + nFacesPerBC - 1]
