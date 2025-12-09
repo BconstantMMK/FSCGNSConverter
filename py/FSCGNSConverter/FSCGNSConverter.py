@@ -54,7 +54,8 @@ def profile_time(func):
             res = func(*args, **kwargs)
             t1 = time.perf_counter()
             elapsed = max(Cmpi.allgather(t1 - t0))
-            if Cmpi.master: print(f"  > {func.__name__}: executed in {elapsed:.3f} sec.")
+            if Cmpi.master:
+                print(f"  > {func.__name__}: executed in {elapsed:.3f} sec.")
             return res
         else:
             return func(*args, **kwargs)
@@ -309,7 +310,6 @@ def create_Quad4Quad(coordinates, nonconformal_faces, ncFacesCentroids,tol=1e-6)
     hook = C.createHook(z, 'nodes')
     ids = C.identifyNodes(hook, zC)
     ids_points8 = ids[ids[:] > -1] - 1
-    print(ids_points8)
 
     node2cell_list = computeNode2CellList(nonconformal_faces, len_NCF, len(coordinates[:,0]))
 
@@ -436,15 +436,14 @@ def computeQuadCentroids(xNP, yNP, zNP, eltConn):
     ))
     return centroids
 
-def initializeCell2ProcOutsideClass(clac, t, newcell2Proc):
-    nProcs = clac.NProcs()
-    newcell2ProcGathered = ArrayOps.AllGather(newcell2Proc, clac)
-    CORRECT_newcell2ProcGathered = FSIntArray(nProcs+1)
-    CORRECT_newcell2ProcGathered.Fill(int(0))
-    for i in range(nProcs):
-        CORRECT_newcell2ProcGathered[i+1] = \
-            int(CORRECT_newcell2ProcGathered[i] + newcell2ProcGathered[i])
-    return CORRECT_newcell2ProcGathered
+def initializeCell2ProcOutsideClass(clac, ncellsOfType=0):
+    nprocs = Cmpi.size
+    gath_cell2Proc = ArrayOps.AllGather(ncellsOfType, clac)
+    fs_cell2Proc = FSIntArray(nprocs+1)
+    fs_cell2Proc[0] = 0
+    for i in range(nprocs):
+        fs_cell2Proc[i+1] = fs_cell2Proc[i] + int(gath_cell2Proc[i])
+    return fs_cell2Proc
 
 def buildMeshOps(meshName, partitioningLibrary="FSZoltan",
                  preserveCellStacks=True, verbose=True):
@@ -1107,14 +1106,14 @@ class FSCGNSConverter:
         self.setNumpyCoordinates(np_coordinates)
         return
 
-    def initializeCell2Proc(self, fsCellType, newcell2Proc=0):
+    def initializeCell2Proc(self, fsCellType, ncellsOfType=0):
         nprocs = Cmpi.size
-        newcell2ProcGathered = ArrayOps.AllGather(newcell2Proc, self.clac)
-        CORRECT_newcell2ProcGathered = FSIntArray(nprocs+1)
-        CORRECT_newcell2ProcGathered.Fill(int(0))
+        gath_cell2Proc = ArrayOps.AllGather(ncellsOfType, self.clac)
+        fs_cell2Proc = FSIntArray(nprocs+1)
+        fs_cell2Proc[0] = 0
         for i in range(nprocs):
-            CORRECT_newcell2ProcGathered[i+1] = int(CORRECT_newcell2ProcGathered[i]+newcell2ProcGathered[i])
-        self.cell2ProcDict[fsCellType] = CORRECT_newcell2ProcGathered
+            fs_cell2Proc[i+1] = fs_cell2Proc[i] + int(gath_cell2Proc[i])
+        self.cell2ProcDict[fsCellType] = fs_cell2Proc
         return
 
     @profile_time
@@ -1174,17 +1173,16 @@ class FSCGNSConverter:
     def initializeFSMesh(self, z_ncFaces=None):
         if self.fsmesh is None:
             self.fsmesh = FSMesh(self.clac)
-
         self.fsmesh.BeginInitialization()
         if Cmpi.size > 1:
             self.initializeCell2Proc(FSMeshEnums.CT_Node, self.nvertices)
             self.fsmesh.InitUnstructNodes(self.cell2ProcDict[FSMeshEnums.CT_Node])
 
-            for fsCellType in self.fsCellTypes:
+            for fsCellType in FSCGNSConverter.FS2CGNSCELLNOS:
+                ncellsOfType = 0
                 if fsCellType in self.cell2NodeDict:
-                    self.initializeCell2Proc(fsCellType, self.cell2NodeDict[fsCellType].shape[0])
-                else:
-                    self.initializeCell2Proc(fsCellType, 0)
+                    ncellsOfType = self.cell2NodeDict[fsCellType].shape[0]
+                self.initializeCell2Proc(fsCellType, ncellsOfType)
                 self.initializeFSConnectivity(fsCellType)
         else:
             self.fsmesh.InitUnstructNodes(self.nvertices)
@@ -1499,13 +1497,14 @@ class FSCGNSConverter:
         if self.IBM:
             IBM_bMarkers = []
             IBM_names = []
-            fsdatanames = ["WallPointCoordinates","DonorPointCoordinates"]
+            fsdatanames = ["WallPointCoordinates", "DonorPointCoordinates"]
             fs_surfaceCellTypes = FSIntArray(len(self.fsSurfaceCellTypes))
-            numpy.copyto(
-                numpy.array(fs_surfaceCellTypes.Buffer(), copy=False),
-                self.fsSurfaceCellTypes,
-                casting='same_kind'
-            )
+            if self.fsSurfaceCellTypes:
+                numpy.copyto(
+                    numpy.array(fs_surfaceCellTypes.Buffer(), copy=False),
+                    self.fsSurfaceCellTypes,
+                    casting='same_kind'
+                )
             self.initializeFSBCCoordinates(fsdatanames, fs_surfaceCellTypes)
 
         for marker, name in zip(bc_markers_all, bc_names_all) :
@@ -2066,7 +2065,7 @@ class FSCGNSConverter:
         if self.dimPb == 2: fsCellType = FSMeshEnums.PCT_Quad2Quad
         else: fsCellType = FSMeshEnums.PCT_Quad4Quad
 
-        self.initializeCell2Proc(fsCellType,len_NCF)
+        self.initializeCell2Proc(fsCellType, len_NCF)
         if z_ncFaces is not None:
             local_ncFaces = Internal.getNodeFromName(
                 z_ncFaces,
@@ -2223,7 +2222,7 @@ class FSCGNSConverter:
 
         if rank == 0:
             print("Removing duplicated vertices from mesh connectivity.")
-        cell2Proc_nodes = initializeCell2ProcOutsideClass(self.clac, FSMeshEnums.CT_Node, len(uniqueCoords))
+        cell2Proc_nodes = initializeCell2ProcOutsideClass(self.clac, len(uniqueCoords))
         dedupMap = ArrayOps.Broadcast(dedupMap, self.clac)
         fsCellTypesNC = self.fsCellTypes
         if not self.conformal: fsCellTypesNC.append(quadNQuad)
@@ -2232,6 +2231,8 @@ class FSCGNSConverter:
             fs_cell2Node = self.fsmesh.GetCell2Node(cellType)
             np_cell2Node = numpy.array(fs_cell2Node.Buffer(), copy=True)
             cell2NodeDict[cellType] = dedupMap[np_cell2Node]
+        gath_fsCellTypesNC = Cmpi.allgather(fsCellTypesNC)
+        fsCellTypesNC = set(ct for cellTypes in gath_fsCellTypesNC for ct in cellTypes)
 
         fs_bMarkerList = self.fsmesh.GetCellAttributeValuesWithNames("CADGroupID")
         names = []
@@ -2259,7 +2260,7 @@ class FSCGNSConverter:
             pass
 
         if self.IBM:
-            if self.nvertices > 0:
+            if self.fsVolumeCellTypes:
                 flis_distance = self.fsmesh.GetUnstructDataset("FlisWallDistance").GetValues()
                 np_flisDistance = numpy.array(flis_distance.Buffer(), copy=True)
             else:
@@ -2268,7 +2269,7 @@ class FSCGNSConverter:
             fsDataNames = ["WallPointCoordinates", "DonorPointCoordinates"]
             datasets = []
             for fsdataname in fsDataNames:
-                if self.nvertices > 0:
+                if self.fsSurfaceCellTypes:
                     dataset = numpy.array(
                         self.fsmesh.GetUnstructDataset(fsdataname).GetValues().Buffer(),
                         copy=True
@@ -2282,18 +2283,22 @@ class FSCGNSConverter:
         self.fsmesh.InitUnstructNodes(cell2Proc_nodes)
 
         for cellType in fsCellTypesNC:
-            cell2Proc = initializeCell2ProcOutsideClass(
-                self.clac, cellType, len(cell2NodeDict[cellType])
-            )
+            ncellsOfType = 0
             if cellType in cell2NodeDict:
                 np_cell2node = cell2NodeDict[cellType]
-                fs_cell2node = FSIntArray(*cell2NodeDict[cellType].shape)
-                numpy.copyto(
-                    numpy.array(fs_cell2node.Buffer(), copy=False),
-                    np_cell2node,
-                    casting='same_kind'
+                fs_cell2node = FSIntArray(*np_cell2node.shape)
+                ncellsOfType = np_cell2node.shape[0]
+                cell2Proc = initializeCell2ProcOutsideClass(
+                    self.clac, ncellsOfType
                 )
+                if ncellsOfType > 0:
+                    numpy.copyto(
+                        numpy.array(fs_cell2node.Buffer(), copy=False),
+                        np_cell2node,
+                        casting='same_kind'
+                    )
             else:
+                cell2Proc = initializeCell2ProcOutsideClass(self.clac, 0)
                 fs_cell2node = FSIntArray(0, FSCellInfo.NNodes(cellType))
             self.fsmesh.InitUnstructCells(cellType, cell2Proc, fs_cell2node, True)
 
@@ -2328,11 +2333,12 @@ class FSCGNSConverter:
             quantitySpecs = FSDataSpecArray(1)
             quantitySpecs[0].Length()
             fs_volumeCellTypes = FSIntArray(len(self.fsVolumeCellTypes))
-            numpy.copyto(
-                numpy.array(fs_volumeCellTypes.Buffer(), copy=False),
-                self.fsVolumeCellTypes,
-                casting='same_kind'
-            )
+            if self.fsVolumeCellTypes:
+                numpy.copyto(
+                    numpy.array(fs_volumeCellTypes.Buffer(), copy=False),
+                    self.fsVolumeCellTypes,
+                    casting='same_kind'
+                )
 
             self.fsmesh.InitUnstructDataset(
                 quantityName,
@@ -2346,11 +2352,12 @@ class FSCGNSConverter:
                     casting='no'
                 )
             fs_surfaceCellTypes = FSIntArray(len(self.fsSurfaceCellTypes))
-            numpy.copyto(
-                numpy.array(fs_surfaceCellTypes.Buffer(), copy=False),
-                self.fsSurfaceCellTypes,
-                casting='same_kind'
-            )
+            if self.fsSurfaceCellTypes:
+                numpy.copyto(
+                    numpy.array(fs_surfaceCellTypes.Buffer(), copy=False),
+                    self.fsSurfaceCellTypes,
+                    casting='same_kind'
+                )
             self.initializeFSBCCoordinates(fsDataNames, fs_surfaceCellTypes)
             if self.fsSurfaceCellTypes:
                 for fsdataname, dataset in zip(fsDataNames, datasets):
