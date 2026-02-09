@@ -676,6 +676,8 @@ class FSCGNSConverter:
         if forFFDX:
             self.convert2NGon4FFD(**kwargs)
             self.mergeBCsByMarker()
+
+        #G._rmOrphans(self.pyTree)
         return
 
     def convert2FSDM(self):
@@ -991,7 +993,7 @@ class FSCGNSConverter:
                     zbcs.append(zbc)
 
                 z = C.convertArray2Hexa(z)
-                if float(C.__version__) < 5.0: z = G.close(z)
+                if float(C.__version__) < 4.1: z = G.close(z)
                 self.nvertices = int(Internal.getValue(z)[0][0])
                 nBCs = len(bcTypes)
                 for i in range(nBCs):
@@ -1745,9 +1747,16 @@ class FSCGNSConverter:
                     )[:nownedCells]
                     np_bMarkerCellType = bMarkerCellTypeDict[cellType]
 
+                    # FS bcname can be overriden by self.bcDict
+                    fsbcname = str(self.fsmesh.GetCellAttributeValueName("CADGroupID", int(marker)))
+                    bcname = self.bcDict[marker][0]
+                    if bcname is not None: fsbcname = bcname
+                    fsbcname = fsbcname[-23:]  # limitation of the CGNS format (add 9-char suffix)
+                    self.bcDict[marker][0] = fsbcname  # always set bcname in self.bcDict
+
                     indices_vector = numpy.ravel(numpy.argwhere(np_bMarkerCellType == marker))
                     if len(indices_vector) > 0:
-                        self.bcsNames.append(str(self.fsmesh.GetCellAttributeValueName("CADGroupID", int(marker))))
+                        self.bcsNames.append(fsbcname)
                         self.indicesPerBdr.append(indices_vector+offset)
                         self.cell2NodeSurfaceList.append(numpy.ravel(np_cell2NodeUnravelled[indices_vector]))
                         self.fsCellTypesBCs.append(cellType)
@@ -1760,49 +1769,46 @@ class FSCGNSConverter:
         """Initialise CGNS mesh connectivity from FS mesh data"""
         if Cmpi.master and self.verbose:
             print("Initialising CGNS mesh connectivity from FS mesh info.")
-        ntotCells = 1
+        ntotElts = 0
         zone = Internal.getZones(self.pyTree)[0]
 
         for i, fsCellType in enumerate(self.fsVolumeCellTypes):
             nvpe = int(FSMeshEnums.CellTypeToString(fsCellType)[-1])
-            nEltsPerConn = self.cell2NodeVolumeList[i].shape[0]//nvpe
+            nepc = self.cell2NodeVolumeList[i].shape[0]//nvpe
             cgnsEltNo = FSCGNSConverter.FS2CGNSCELLNOS[fsCellType]
             cgnsCellType = Internal.eltNo2EltName(cgnsEltNo)[0]
             Internal.newElements(
                 name="GridElements_" + cgnsCellType,
                 etype=cgnsCellType,
                 econnectivity=self.cell2NodeVolumeList[i],
-                erange=[ntotCells, ntotCells + nEltsPerConn - 1],
+                erange=[ntotElts+1, ntotElts+nepc],
                 eboundary=0,
                 parent=zone
             )
-            ntotCells += nEltsPerConn
+            ntotElts += nepc
 
         if not includeSurfaceData: return
 
-        ntotCells = self.nvolumeCells + 1
         for i, fsCellType in enumerate(self.fsCellTypesBCs):
             nvpe = int(FSMeshEnums.CellTypeToString(fsCellType)[-1])
-            nFacesPerBC = len(self.cell2NodeSurfaceList[i])//nvpe
+            nfpbc = len(self.cell2NodeSurfaceList[i])//nvpe
             cgnsEltNo = FSCGNSConverter.FS2CGNSCELLNOS[fsCellType]
             cgnsCellType = Internal.eltNo2EltName(cgnsEltNo)[0]
-            # FS bcname in self.bcsNames can be overriden by self.bcDict
             bcname, bctype = self.bcDict[self.fsMarkers[i]]
             if bcname is None: bcname = self.bcsNames[i].split(".")[0]
             bcname = f"{bcname}.{cgnsCellType}_{int(self.fsMarkers[i])}"
-            bcname = bcname[-32:]  # limitation of the CGNS format
             Internal.newElements(
                 name=bcname,
                 etype=cgnsCellType,
-                erange=[ntotCells, ntotCells+nFacesPerBC-1],
+                erange=[ntotElts+1, ntotElts+nfpbc],
                 econnectivity=self.cell2NodeSurfaceList[i],
-                eboundary=nFacesPerBC,
+                eboundary=nfpbc,
                 parent=zone
             )
 
             C._addBC2Zone(
                 zone, bcname, bctype,
-                elementRange=[ntotCells, ntotCells + nFacesPerBC - 1]
+                elementRange=[ntotElts+1, ntotElts+nfpbc]
             )
             zoneBC =  Internal.getNodeFromType(zone, "ZoneBC_t")
             lastbcname = C.getLastBCName(bcname)
@@ -1818,7 +1824,7 @@ class FSCGNSConverter:
                 "BoundaryMarker",
                 int(self.fsMarkers[i]), [], 'UserDefinedData_t'
             ])
-            ntotCells += nFacesPerBC
+            ntotElts += nfpbc
         return
 
     @profile_time
@@ -2386,7 +2392,7 @@ class FSCGNSConverter:
         )
 
     @profile_time
-    def convert2NGon4FFD(self, reorient=True, tol=1e-6, **kwargs):
+    def convert2NGon4FFD(self, reorient=True, tol=1e-6, monozone=True, **kwargs):
         """
         Convert a CGNS ME mesh to NGon for use in FFD
 
@@ -2394,6 +2400,9 @@ class FSCGNSConverter:
             reorient; bool: Reorient surface normals. Default is True
 
             tol; float: tolerance. Default is 1e-6
+
+            monozone; bool: Whether to merge all zones into a single NGon zone.
+                Default is True
         """
         if self.pyTree is None:
             filename = self.meshName.split(".")[0]
@@ -2420,13 +2429,13 @@ class FSCGNSConverter:
         else:
             self.releaseResources()
 
-        if float(C.__version__) < 5.0:
+        if float(C.__version__) < 4.1 or monozone:
             # Break zones such that there is one type of volume element per zone
             if Cmpi.master and self.verbose:
                 print("Breaking ME connectivity: 1 type of volume element per zone.")
             t3 = C.breakConnectivity(self.pyTree)
 
-            # Limitation fixed in Cassiopee 5.0
+            # Limitation fixed in Cassiopee 4.1
             zones = Internal.getZones(t3)
             for zone in zones:
                 n_elts = Internal.getNodesFromType(zone, "Elements_t")
@@ -2519,20 +2528,10 @@ class FSCGNSConverter:
             # Convert ME to NGon
             if Cmpi.master and self.verbose: print("Converting ME to NGon.")
             C._deleteEmptyZones(self.pyTree)
-            C._convertArray2NGon(self.pyTree, recoverBC=True, api=3) # TODO attempt - fix it otherwise
+            C._convertArray2NGon(self.pyTree, recoverBC=True, api=3)
             # Change zone name
             z = Internal.getZones(self.pyTree)[0]
-            z[0] = "zone." + str(Cmpi.rank)
-            n_bcs = C.getBCs(self.pyTree)[0]
-            Internal._rmNodesByNameAndType(self.pyTree, "QUAD_bdy*", "Elements_t")
-            Internal._rmNodesByNameAndType(self.pyTree, "TRI_bdy*", "Elements_t")
-            # Rename BC nodes
-            n_zbcs = Internal.getNodesFromType(self.pyTree, "BC_t")
-            for n in n_zbcs:
-                n[0] = n[0][:-2].replace('.QUAD', '').replace('.TRI', '')
-            # Delete Element boundary nodes
-            n_bElts = Internal.getElementBoundaryNodes(z)
-            for n in n_bElts: Internal._rmNode(self.pyTree, n)
+            z[0] = f"zone.{Cmpi.rank:d}"
 
         if reorient:
             import Intersector.PyTree as XOR
@@ -2579,7 +2578,6 @@ class FSCGNSConverter:
             zbc = C.extractBCOfType(self.pyTree, "FamilySpecified:" + familyName)
             zbc = T.join(zbc)
             zbcs.append(zbc)
-
         C._recoverBCs(self.pyTree, (zbcs, familyNames, familyTypes), tol=tol, removeBC=True)
         zone = Internal.getZones(self.pyTree)
         for FS_node in FS:

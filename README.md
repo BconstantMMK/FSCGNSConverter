@@ -41,10 +41,10 @@ convObj = FSCGNSConverter(
     pyTree=None,
     clac=None,
     fsmesh=None,
-    dimPb=2,  # soon deprecated
     flipYZAxes=False,
     conformal=True,
     IBMParameters=None,
+    dimPb=2,
     datasets='all',
     bcDict=None,
     coordsName="Coordinates",
@@ -61,6 +61,7 @@ convObj = FSCGNSConverter(
 | flipYZAxes | invertPlanesYZ | bool | False | Whether to flip the y- and z-axes |
 | conformal | | bool | True | Whether the mesh presents hanging nodes |
 | IBMParameters | IBM_parameters | dict | None | Dictionary of IBM parameters |
+| dimPb | | int | 2 | Problem dimension (only useful for IBM) |
 | datasets | whichDatasets | str, list or set | 'all' | Names of the datasets to consider during conversion |
 | bcDict | dict_BCs | dict | None | Dictionary mapping FS BC markers to pairs of CGNS BC names and types |
 | coordsName | coords_name  | str | "Coordinates" | Name of the Coordinates field |
