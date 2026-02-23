@@ -993,7 +993,7 @@ class FSCGNSConverter:
                     zbcs.append(zbc)
 
                 z = C.convertArray2Hexa(z)
-                if float(C.__version__) < 4.1: z = G.close(z)
+                if float(C.__version__) < 4.2: z = G.close(z)
                 self.nvertices = int(Internal.getValue(z)[0][0])
                 nBCs = len(bcTypes)
                 for i in range(nBCs):
@@ -1076,12 +1076,6 @@ class FSCGNSConverter:
                     self.fsSurfaceCellTypes.append(4)  # Quad
 
             self.fsCellTypes = self.fsVolumeCellTypes + self.fsSurfaceCellTypes
-
-        #Cmpi.barrier()
-        #gath_fsCellTypes = Cmpi.allgather(self.fsCellTypes)
-        #gath_fsCellTypes = list({x for v in gath_fsCellTypes for x in v})
-        #if zones == []:
-        #    self.fsCellTypes = gath_fsCellTypes
         return
 
     @profile_time
@@ -1236,7 +1230,7 @@ class FSCGNSConverter:
 
         list_suffix_datasets = [""]
         list_suffix_datasets.extend(range(1, N_IP_per_element))
-        for i in range(N_IP_per_element): # WHAT IS THIS?
+        for i in range(N_IP_per_element):
             flis_node = Internal.getNodeFromName(
                 self.pyTree,
                 "FlisWallDistance" + str(list_suffix_datasets[i])
@@ -1289,7 +1283,8 @@ class FSCGNSConverter:
         # Loop on BCs
         for bc_node in pytree_bc_nodes:
             bc_name = bc_node[0]
-            # Get list of BC points: based on name to make the difference between point list and point range ;
+            # Get list of BC points: based on name to make the difference
+            # between point list and point range ;
             if Internal.getNodeFromType(bc_node, "IndexArray_t") is not None:
                 pointlist_node = Internal.getNodeFromType(bc_node, "IndexArray_t")
                 point_list = numpy.ravel(pointlist_node[1]) - 1
@@ -1297,7 +1292,9 @@ class FSCGNSConverter:
                 if bMarker_node is not None:
                     bc_bMarker = Internal.getValue(bMarker_node)
                 else:
-                    # Get boundary marker: generate one if it does not exist otherwise we expect it to be in a user defined node named "BoundaryMarker"
+                    # Get boundary marker: generate one if it does not exist
+                    # otherwise we expect it to be in a user defined node named
+                    # "BoundaryMarker"
                     bc_bMarker = current_automatic_marker
                     current_automatic_marker += 1
 
@@ -1374,7 +1371,7 @@ class FSCGNSConverter:
 
     @profile_time
     def initializeFSBCs(self, IBMDatasets=[]):
-        #if not self.bcDict: return  # TODO VINCENT
+        #if not self.bcDict: return  # TODO
         #We now have our point list for each marker so we can init the cell attribute in the fsmesh
         np_markerArray = numpy.zeros(self.nsurfaceCells, dtype=Internal.E_NpyInt)
         for marker, np_facePL in self.bMarker2FacePLDict.items():
@@ -1453,7 +1450,7 @@ class FSCGNSConverter:
 
     @profile_time
     def initializeFSBCs_MPI(self, IBMDatasets=[]):
-        #if not self.bcDict: return  # TODO VINCENT
+        #if not self.bcDict: return  # TODO
         np_markerArray = numpy.zeros(self.nsurfaceCells, dtype=int)
         values = list(self.bMarker2BCNameDict.values())
         gath_values = Cmpi.allgather(values)
@@ -1557,8 +1554,8 @@ class FSCGNSConverter:
         return
 
     def createDatasetOfCoordinatesBC(self, fsmesh, coords_x, coords_y, coords_z,
-                                     BC_names, nb_cell_surf, point_list): # TODO VINCENT rewrite entirely for loop
-        #point_list = numpy.asarray(point_list) TODO VINCENT
+                                     BC_names, nb_cell_surf, point_list): # TODO rewrite entirely for loop
+        #point_list = numpy.asarray(point_list) TODO
         if not Cmpi.size > 1:
             fs_surfaceCellTypes = FSIntArray(len(self.fsSurfaceCellTypes))
             numpy.copyto(
@@ -1568,7 +1565,7 @@ class FSCGNSConverter:
             )
             self.initializeFSBCCoordinates(BC_names, fs_surfaceCellTypes)
 
-        # TODO VINCENT
+        # TODO
         # if len(coords_x) > 1:
         #     coords_x = numpy.concatenate(coords_x)
         #     coords_y = numpy.concatenate(coords_y)
@@ -1600,7 +1597,7 @@ class FSCGNSConverter:
             )
 
             dataset = numpy.zeros((nb_cell_surf, 3))
-            #dataset[point_list] = np_coordinates # TODO VINCENT
+            #dataset[point_list] = np_coordinates # TODO
             for j in range(nVertices):
                 dataset[point_list[j]][0] = np_coordinates[j][0]
                 dataset[point_list[j]][1] = np_coordinates[j][1]
@@ -1796,6 +1793,7 @@ class FSCGNSConverter:
             cgnsCellType = Internal.eltNo2EltName(cgnsEltNo)[0]
             bcname, bctype = self.bcDict[self.fsMarkers[i]]
             if bcname is None: bcname = self.bcsNames[i].split(".")[0]
+            else: bcname = bcname.split(".")[0]
             bcname = f"{bcname}.{cgnsCellType}_{int(self.fsMarkers[i])}"
             Internal.newElements(
                 name=bcname,
@@ -2392,7 +2390,7 @@ class FSCGNSConverter:
         )
 
     @profile_time
-    def convert2NGon4FFD(self, reorient=True, tol=1e-6, monozone=True, **kwargs):
+    def convert2NGon4FFD(self, reorient=True, tol=1e-6, **kwargs):
         """
         Convert a CGNS ME mesh to NGon for use in FFD
 
@@ -2400,9 +2398,6 @@ class FSCGNSConverter:
             reorient; bool: Reorient surface normals. Default is True
 
             tol; float: tolerance. Default is 1e-6
-
-            monozone; bool: Whether to merge all zones into a single NGon zone.
-                Default is True
         """
         if self.pyTree is None:
             filename = self.meshName.split(".")[0]
@@ -2429,13 +2424,15 @@ class FSCGNSConverter:
         else:
             self.releaseResources()
 
-        if float(C.__version__) < 4.1 or monozone:
+        # In older versions of Cassiopee where Multiple-Elements were not
+        # supported, break ME into BEs
+        if float(C.__version__) < 4.2:
             # Break zones such that there is one type of volume element per zone
             if Cmpi.master and self.verbose:
                 print("Breaking ME connectivity: 1 type of volume element per zone.")
             t3 = C.breakConnectivity(self.pyTree)
 
-            # Limitation fixed in Cassiopee 4.1
+            # Limitation fixed in Cassiopee 4.2
             zones = Internal.getZones(t3)
             for zone in zones:
                 n_elts = Internal.getNodesFromType(zone, "Elements_t")
@@ -2535,7 +2532,8 @@ class FSCGNSConverter:
 
         if reorient:
             import Intersector.PyTree as XOR
-            if Cmpi.master and self.verbose: print("Reorienting mesh for use in FFD.")
+            if Cmpi.master and self.verbose:
+                print("Reorienting mesh for use in FFD.")
             XOR._reorient(self.pyTree)
 
         if self.datasets == 'all' or len(self.datasets) > 0:
@@ -2577,7 +2575,7 @@ class FSCGNSConverter:
         for familyName in familyNames:
             zbc = C.extractBCOfType(self.pyTree, "FamilySpecified:" + familyName)
             zbc = T.join(zbc)
-            zbcs.append(zbc)
+            zbcs.append([zbc])
         C._recoverBCs(self.pyTree, (zbcs, familyNames, familyTypes), tol=tol, removeBC=True)
         zone = Internal.getZones(self.pyTree)
         for FS_node in FS:
