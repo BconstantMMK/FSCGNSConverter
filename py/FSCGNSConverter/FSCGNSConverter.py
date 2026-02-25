@@ -2046,7 +2046,8 @@ class FSCGNSConverter:
         return
 
     def initializePseudoCell_QuadNQuad_MPI(self, z_ncFaces):
-        if Cmpi.master and self.verbose: print("Creating QuadNQuad pseudo connectivity.")
+        if Cmpi.master and self.verbose:
+            print("Creating QuadNQuad pseudo connectivity.")
         rank = self.clac.ProcID()
         if z_ncFaces is not None:
             z_ncFaces[0] = z_ncFaces[0] + str(Cmpi.rank)
@@ -2078,8 +2079,7 @@ class FSCGNSConverter:
         else:
             local_ncFaces = numpy.empty(0, dtype=Internal.E_NpyInt)
 
-        print("TMP LOG - checking dtype of local_ncFaces", local_ncFaces.dtype)
-        allgathered_local_ncFaces = Cmpi.gather(local_ncFaces, 0)
+        allgathered_local_ncFaces = Cmpi.allgather(local_ncFaces)
         del local_ncFaces
 
         listQuadNQuad_local = []
