@@ -908,8 +908,8 @@ class FSCGNSConverter:
                 zCoord_nodes_NCF = zCoord[octreeFaces_idx_nodes]
 
                 global_ncFaces = numpy.reshape(octreeFaces_EC_global-1,(len_NCF,4))
-                indices1 = numpy.linspace(0, len_nodes_NCF-1, len_nodes_NCF, dtype=int)
-                glob2loc = numpy.zeros(self.nvertices, dtype=int)
+                indices1 = numpy.linspace(0, len_nodes_NCF-1, len_nodes_NCF, dtype=Internal.E_NpyInt)
+                glob2loc = numpy.zeros(self.nvertices, dtype=Internal.E_NpyInt)
                 glob2loc[octreeFaces_idx_nodes] = indices1
                 local_ncFaces = glob2loc[global_ncFaces]
 
@@ -1451,7 +1451,7 @@ class FSCGNSConverter:
     @profile_time
     def initializeFSBCs_MPI(self, IBMDatasets=[]):
         #if not self.bcDict: return  # TODO
-        np_markerArray = numpy.zeros(self.nsurfaceCells, dtype=int)
+        np_markerArray = numpy.zeros(self.nsurfaceCells, dtype=Internal.E_NpyInt)
         values = list(self.bMarker2BCNameDict.values())
         gath_values = Cmpi.allgather(values)
 
@@ -2078,6 +2078,7 @@ class FSCGNSConverter:
         else:
             local_ncFaces = numpy.empty(0, dtype=Internal.E_NpyInt)
 
+        print("TMP LOG - checking dtype of local_ncFaces", local_ncFaces.dtype)
         allgathered_local_ncFaces = Cmpi.gather(local_ncFaces, 0)
         del local_ncFaces
 
