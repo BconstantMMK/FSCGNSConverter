@@ -2,7 +2,7 @@
 import os
 import sys
 import time
-from functools import cmp_to_key, wraps
+from functools import wraps
 import numpy
 
 import Converter.PyTree as C
@@ -167,7 +167,7 @@ def recoverBCsC(a, BCs, BCNames, BCTypes, tol=1.e-11):
 
     return list_BCs, list_BCNames, list_BCTypes
 
-def create_Quad2Quad(coordinates, nonconformal_faces, ncFacesCentroids,
+def createQuad2Quad(coordinates, nonconformal_faces, ncFacesCentroids,
                      plane="xy", tol=1e-6):
     if plane == 'xy':
         planedir = [0,1]
@@ -176,7 +176,7 @@ def create_Quad2Quad(coordinates, nonconformal_faces, ncFacesCentroids,
         planedir = [0,2]
         ndir = 1
     else:
-        print("ERROR: Plane in create_Quad2Quad must be 'xy' or 'xz' instead "
+        print("ERROR: Plane in createQuad2Quad must be 'xy' or 'xz' instead "
               "of {}.".format(plane))
         sys.exit(1)
 
@@ -188,9 +188,9 @@ def create_Quad2Quad(coordinates, nonconformal_faces, ncFacesCentroids,
     )
 
     listQuad2Quad = []
-    len_NCF = len(nonconformal_faces)
+    lenNCF = len(nonconformal_faces)
 
-    node2cell_list = computeNode2CellList(nonconformal_faces, len_NCF, len(coordinates[:,0]))
+    node2cell_list = computeNode2CellList(nonconformal_faces, lenNCF, len(coordinates[:,0]))
     lengths = numpy.array([len(x) for x in node2cell_list])
     points45_init = numpy.where(lengths==3)[0]
 
@@ -287,31 +287,39 @@ def create_Quad2Quad(coordinates, nonconformal_faces, ncFacesCentroids,
     #    raise ValueError("Problem on non conformal faces: only %d out of %d have been matched." %(listQuad2Quad.shape[0],nNCFaces//3))
     return np_Quad2Quad
 
-def create_Quad4Quad(coordinates, nonconformal_faces, ncFacesCentroids,tol=1e-6):
-    nb_vertices = coordinates.shape[0]
-    len_NCF = len(nonconformal_faces)
+def createQuad4Quad(coordinates, nonconformal_faces, ncFacesCentroids, tol=1e-6):
+    nvertices = coordinates.shape[0]
+    lenNCF = len(nonconformal_faces)
 
-    z = Internal.newZone(name="Zone",zsize=[[nb_vertices,len_NCF]],ztype="Unstructured")
-    gc = Internal.newGridCoordinates(parent=z)
-    Internal.newDataArray('CoordinateX', value=coordinates[:,0], parent=gc)
-    Internal.newDataArray('CoordinateY', value=coordinates[:,1], parent=gc)
-    Internal.newDataArray('CoordinateZ', value=coordinates[:,2], parent=gc)
-
-    zC = Internal.newZone(
-        name="ZoneCenters",
-        zsize=[[len_NCF,len_NCF]],
+    z = Internal.newZone(
+        name="Zone",
+        zsize=[[nvertices,lenNCF]],
         ztype="Unstructured"
     )
-    gcC = Internal.newGridCoordinates(parent=zC)
-    Internal.newDataArray('CoordinateX', ncFacesCentroids[:,0], parent=gcC)
-    Internal.newDataArray('CoordinateY', ncFacesCentroids[:,1], parent=gcC)
-    Internal.newDataArray('CoordinateZ', ncFacesCentroids[:,2], parent=gcC)
+    n_gc = Internal.newGridCoordinates(parent=z)
+    Internal.newDataArray('CoordinateX', value=coordinates[:,0], parent=n_gc)
+    Internal.newDataArray('CoordinateY', value=coordinates[:,1], parent=n_gc)
+    Internal.newDataArray('CoordinateZ', value=coordinates[:,2], parent=n_gc)
+
+    zc = Internal.newZone(
+        name="ZoneCenters",
+        zsize=[[lenNCF, lenNCF]],
+        ztype="Unstructured"
+    )
+    n_gcc = Internal.newGridCoordinates(parent=zc)
+    Internal.newDataArray('CoordinateX', ncFacesCentroids[:,0], parent=n_gcc)
+    Internal.newDataArray('CoordinateY', ncFacesCentroids[:,1], parent=n_gcc)
+    Internal.newDataArray('CoordinateZ', ncFacesCentroids[:,2], parent=n_gcc)
 
     hook = C.createHook(z, 'nodes')
-    ids = C.identifyNodes(hook, zC)
+    ids = C.identifyNodes(hook, zc)
     ids_points8 = ids[ids[:] > -1] - 1
 
-    node2cell_list = computeNode2CellList(nonconformal_faces, len_NCF, len(coordinates[:,0]))
+    offsets, cells = computeNode2Cell(
+        nonconformal_faces,
+        nelts=lenNCF,
+        nvertices=nvertices
+    )
 
     listQuad4Quad = []
     nfaces = len(nonconformal_faces)
@@ -323,8 +331,10 @@ def create_Quad4Quad(coordinates, nonconformal_faces, ncFacesCentroids,tol=1e-6)
 
     unique_ids_points8 = numpy.unique(ids_points8)
     for point8 in unique_ids_points8:
-        match_nonconformal_faces = node2cell_list[point8][1:]
-        if len(match_nonconformal_faces)!=4:
+        beg = offsets[point8]
+        end = offsets[point8+1]
+        match_nonconformal_faces = cells[beg:end]
+        if len(match_nonconformal_faces) !=4 :
             print("ERROR: {} non conformal faces match this hanging "
                   "point. 4 non conformal faces should match (Quad4Quad).".format(
                       len(match_nonconformal_faces)))
@@ -350,7 +360,10 @@ def create_Quad4Quad(coordinates, nonconformal_faces, ncFacesCentroids,tol=1e-6)
                 point0 = position[1]
                 point7 = position[2]
 
-        listQuad4Quad.append([point0, point1, point2, point3, point4, point5, point6, point7, point8])
+        listQuad4Quad.append([
+            point0, point1, point2, point3,
+            point4, point5, point6, point7, point8
+        ])
 
     np_Quad4Quad = numpy.array(listQuad4Quad, dtype=Internal.E_NpyInt)
     return np_Quad4Quad
@@ -399,33 +412,26 @@ def _addBC2ZoneLoc(z, bndName, bndType, zbc, loc='FaceCenter', zdnrName=None):
                                value=numpy.array([[maxElt+1,maxElt+neb]]))
     return None
 
-def isequal(a, b):
-    return abs(a - b) < 1.e-10
-
-def cmp(a, b):
-    if isequal(a[2], b[2]):
-        if isequal(a[1], b[1]):
-            if isequal(a[0], b[0]):
-                return 0
-            elif a[0] > b[0]:
-                return 1
-            else:
-                return -1
-        elif a[1] > b[1]:
-            return 1
-        else:
-            return -1
-    elif a[2] > b[2]:
-        return 1
-    else:
-        return -1
-
-def computeNode2CellList(np_cell2NodeUnravelled, nelts, nnodes, nvpe=4):
-    node2CellList  = [[i] for i in range(nnodes)]
+def computeNode2CellList(np_cell2NodeUnravelled, nelts, nvertices, nvpe=4):
+    node2CellList = [[i] for i in range(nvertices)]
     for i in range(nelts):
         for j in range(nvpe):
             node2CellList[np_cell2NodeUnravelled[i][j]].append(i)
     return node2CellList
+
+def computeNode2Cell(np_cell2NodeUnravelled, nelts, nvertices, nvpe=4):
+    nodes = np_cell2NodeUnravelled.ravel()
+    cells = numpy.repeat(numpy.arange(nelts), nvpe)
+    # Sort by node index
+    order = numpy.argsort(nodes)
+    nodes = nodes[order]
+    cells = cells[order]
+    # Count cells per node
+    counts = numpy.bincount(nodes, minlength=nvertices)
+    offsets = numpy.empty(nvertices+1, dtype=Internal.E_NpyInt)
+    offsets[0] = 0
+    numpy.cumsum(counts, out=offsets[1:])
+    return offsets, cells
 
 def computeQuadCentroids(xNP, yNP, zNP, eltConn):
     quadIdc = eltConn.reshape(-1, 4)
@@ -869,7 +875,7 @@ class FSCGNSConverter:
             Internal._renameNode(self.pyTree, old_name_hf, "NonConformalFaces")
             n_NCF = Internal.getNodeFromName(self.pyTree, "NonConformalFaces")
             if Internal.getNodeFromName(n_NCF, "PointList") != None:
-                len_NCF = Internal.getNodeFromName(n_NCF, "PointList")[1][0].shape[0]
+                lenNCF = Internal.getNodeFromName(n_NCF, "PointList")[1][0].shape[0]
             elif Internal.getNodeFromName(n_NCF, "ElementRange") != None:
                 eltRange = Internal.getNodeFromName(n_NCF, "ElementRange")[1]
                 if len(eltRange) == 1:
@@ -880,8 +886,8 @@ class FSCGNSConverter:
                     print("ERROR: Problem with the element range of non  "
                           "conformal interfaces.")
                     sys.exit(1)
-                len_NCF = ERmax - ERmin + 1
-            self.nsurfaceCells -= len_NCF
+                lenNCF = ERmax - ERmin + 1
+            self.nsurfaceCells -= lenNCF
         return
 
     @profile_time
@@ -894,7 +900,7 @@ class FSCGNSConverter:
 
         if n_octreeFaces != []:
             octreeFaces_EC_global = Internal.getNodeFromName(n_octreeFaces, "ElementConnectivity")[1]
-            len_NCF = len(octreeFaces_EC_global)//4
+            lenNCF = len(octreeFaces_EC_global)//4
 
             n_NCF = Internal.getNodesFromName(self.pyTree, 'NonConformalFaces')
             for i in n_NCF: Internal._rmNode(self.pyTree, i)
@@ -907,26 +913,26 @@ class FSCGNSConverter:
                 yCoord_nodes_NCF = yCoord[octreeFaces_idx_nodes]
                 zCoord_nodes_NCF = zCoord[octreeFaces_idx_nodes]
 
-                global_ncFaces = numpy.reshape(octreeFaces_EC_global-1,(len_NCF,4))
+                global_ncFaces = numpy.reshape(octreeFaces_EC_global-1,(lenNCF,4))
                 indices1 = numpy.linspace(0, len_nodes_NCF-1, len_nodes_NCF, dtype=Internal.E_NpyInt)
                 glob2loc = numpy.zeros(self.nvertices, dtype=Internal.E_NpyInt)
                 glob2loc[octreeFaces_idx_nodes] = indices1
-                local_ncFaces = glob2loc[global_ncFaces]
+                locNCFaces = glob2loc[global_ncFaces]
 
                 z_octreeFaces = Internal.newZone(
                     name="NonConformalFaces",
                     zsize=[[len(xCoord_nodes_NCF),len(octreeFaces_idx_nodes)]],
                     ztype="Unstructured"
                 )
-                gc = Internal.newGridCoordinates(parent=z_octreeFaces)
-                Internal.newDataArray('CoordinateX', value=xCoord_nodes_NCF, parent=gc)
-                Internal.newDataArray('CoordinateY', value=yCoord_nodes_NCF, parent=gc)
-                Internal.newDataArray('CoordinateZ', value=zCoord_nodes_NCF, parent=gc)
+                n_gc = Internal.newGridCoordinates(parent=z_octreeFaces)
+                Internal.newDataArray('CoordinateX', value=xCoord_nodes_NCF, parent=n_gc)
+                Internal.newDataArray('CoordinateY', value=yCoord_nodes_NCF, parent=n_gc)
+                Internal.newDataArray('CoordinateZ', value=zCoord_nodes_NCF, parent=n_gc)
                 Internal.newElements(
                     name="NonconformalFaces",
                     etype=7,
-                    econnectivity=numpy.ravel(local_ncFaces+1),
-                    erange=[1, len_NCF],
+                    econnectivity=numpy.ravel(locNCFaces+1),
+                    erange=[1, lenNCF],
                     eboundary=0,
                     parent=z_octreeFaces
                 )
@@ -1993,42 +1999,42 @@ class FSCGNSConverter:
 
     @profile_time
     def initializePseudoCell_QuadNQuad(self, z_ncFaces):
-        local_ncFaces = Internal.getNodeFromName(z_ncFaces, "ElementConnectivity")[1] - 1
-        len_NCF = len(local_ncFaces)//4
-        n_ncFacesX = Internal.getNodeFromName(z_ncFaces, "CoordinateX")[1]
-        n_ncFacesY = Internal.getNodeFromName(z_ncFaces, "CoordinateY")[1]
-        n_ncFacesZ = Internal.getNodeFromName(z_ncFaces, "CoordinateZ")[1]
+        locNCFaces = Internal.getNodeFromName(z_ncFaces, "ElementConnectivity")[1] - 1
+        lenNCF = len(locNCFaces)//4
+        np_coordsX = Internal.getNodeFromName(z_ncFaces, "CoordinateX")[1]
+        np_coordsY = Internal.getNodeFromName(z_ncFaces, "CoordinateY")[1]
+        np_coordsZ = Internal.getNodeFromName(z_ncFaces, "CoordinateZ")[1]
 
-        n_ncFaces = numpy.column_stack((n_ncFacesX, n_ncFacesY, n_ncFacesZ))
+        np_coords = numpy.column_stack((np_coordsX, np_coordsY, np_coordsZ))
         ncFacesCentroids = computeQuadCentroids(
-            n_ncFacesX,
-            n_ncFacesY,
-            n_ncFacesZ,
-            local_ncFaces
+            np_coordsX,
+            np_coordsY,
+            np_coordsZ,
+            locNCFaces
         )
 
-        local_ncFaces = numpy.reshape(local_ncFaces, (len_NCF,4))
+        locNCFaces = numpy.reshape(locNCFaces, (lenNCF,4))
         tic = time.perf_counter()
-        if self.dimPb == 2: create_fct =  create_Quad2Quad
-        else: create_fct = create_Quad4Quad
-        listQuadNQuad_local = create_fct(
-            n_ncFaces,
-            local_ncFaces,
+        if self.dimPb == 2: createQuadNQuad =  createQuad2Quad
+        else: createQuadNQuad = createQuad4Quad
+        locQNQList = createQuadNQuad(
+            np_coords,
+            locNCFaces,
             ncFacesCentroids
         )  # plane, tol
 
         toc = time.perf_counter()
-        print("[{rank}] DEBUG: Time for hanging nodes search: {toc-tic:.3f}.")
+        print("f[{rank}] DEBUG: Time for hanging nodes search: {toc-tic:.3f}.")
         Internal._rmNodesFromType(self.pyTree, "Elements_t")
         hook = C.createHook(self.pyTree, 'nodes')
         ids = C.identifyNodes(hook, z_ncFaces)
         ids = ids[ids != -1] - 1
-        listQuadNQuad = ids[listQuadNQuad_local]
+        qnqList = ids[locQNQList]
 
-        fs_cell2node = FSIntArray(*listQuadNQuad.shape)
+        fs_cell2node = FSIntArray(*qnqList.shape)
         numpy.copyto(
             numpy.array(fs_cell2node.Buffer(), copy=False),
-            listQuadNQuad,
+            qnqList,
             casting='same_kind'
         )
         if self.dimPb == 2:
@@ -2053,10 +2059,10 @@ class FSCGNSConverter:
         decimals = int(-numpy.log10(tol))
         if self.dimPb == 2:
             fsCellType = FSMeshEnums.PCT_Quad2Quad
-            create_QuadXQuad = create_Quad2Quad
+            createQuadNQuad = createQuad2Quad
         else:
             fsCellType = FSMeshEnums.PCT_Quad4Quad
-            create_QuadXQuad = create_Quad4Quad
+            createQuadNQuad = createQuad4Quad
 
         if z_ncFaces is not None:
             z_ncFaces[0] += str(rank)
@@ -2143,12 +2149,11 @@ class FSCGNSConverter:
             print("Rank {}: locNCFaces {}.".format(rank, gath_locNCFaces.shape[0]))
             tic = time.perf_counter()
 
-            locQNQList = create_QuadXQuad(
+            locQNQList = createQuadNQuad(
                 uniqueCoords,
                 gath_locNCFaces,
                 ncFacesCentroids
             )
-            print("dedupMap:", dedupMap)
             toc = time.perf_counter()
             print("Rank {}: time for hanging nodes search: {:.3f}.".format(Cmpi.rank, toc-tic))
             print("Rank {}: size listQuadNQuad {}.".format(rank, locQNQList.shape[0]))
@@ -2197,7 +2202,7 @@ class FSCGNSConverter:
 
         tic = time.perf_counter()
         rank = self.clac.GetProcID()
-        if rank == 0:
+        if Cmpi.master:
             # Use lexicographical order to sort by z, then y, then x
             lexOrder = numpy.lexsort(numpy.around(np_coords, decimals=decimals).T)
             np_sortedCoords = np_coords[lexOrder]
@@ -2225,7 +2230,7 @@ class FSCGNSConverter:
             elapsed = toc-tic
             print(f"DEBUG: Time for dedup map build = {elapsed:.3f}.")
 
-        if rank == 0:
+        if Cmpi.master:
             print("Removing duplicated vertices from mesh connectivity.")
         cell2Proc_nodes = initializeCell2ProcOutsideClass(self.clac, len(uniqueCoords))
         dedupMap = ArrayOps.Broadcast(dedupMap, self.clac)
@@ -2525,9 +2530,8 @@ class FSCGNSConverter:
         else:
             # Convert ME to NGon
             if Cmpi.master and self.verbose: print("Converting ME to NGon.")
-            C._deleteEmptyZones(self.pyTree)
             C._convertArray2NGon(self.pyTree, recoverBC=True, api=3)
-            # Change zone name
+            # Rename zone
             z = Internal.getZones(self.pyTree)[0]
             z[0] = f"zone.{Cmpi.rank:d}"
 
