@@ -2049,110 +2049,112 @@ class FSCGNSConverter:
         if Cmpi.master and self.verbose:
             print("Creating QuadNQuad pseudo connectivity.")
         rank = self.clac.ProcID()
-        if z_ncFaces is not None:
-            z_ncFaces[0] = z_ncFaces[0] + str(Cmpi.rank)
-            n_ncFacesX = Internal.getNodeFromName(z_ncFaces, "CoordinateX")[1]
-            n_ncFacesY = Internal.getNodeFromName(z_ncFaces, "CoordinateY")[1]
-            n_ncFacesZ = Internal.getNodeFromName(z_ncFaces, "CoordinateZ")[1]
+        tol = 1e-10
+        decimals = int(-numpy.log10(tol))
+        if self.dimPb == 2:
+            fsCellType = FSMeshEnums.PCT_Quad2Quad
+            create_QuadXQuad = create_Quad2Quad
         else:
-            n_ncFacesX = numpy.empty(0)
-            n_ncFacesY = numpy.empty(0)
-            n_ncFacesZ = numpy.empty(0)
+            fsCellType = FSMeshEnums.PCT_Quad4Quad
+            create_QuadXQuad = create_Quad4Quad
 
-        allgathered_x = Cmpi.gather(n_ncFacesX, 0)
-        allgathered_y = Cmpi.gather(n_ncFacesY, 0)
-        allgathered_z = Cmpi.gather(n_ncFacesZ, 0)
-
-        len_NCF = len(n_ncFacesX)
-
-        del n_ncFacesX, n_ncFacesY, n_ncFacesZ
-
-        if self.dimPb == 2: fsCellType = FSMeshEnums.PCT_Quad2Quad
-        else: fsCellType = FSMeshEnums.PCT_Quad4Quad
-
-        self.initializeCell2Proc(fsCellType, len_NCF)
         if z_ncFaces is not None:
-            local_ncFaces = Internal.getNodeFromName(
+            z_ncFaces[0] += str(rank)
+            np_coordsX = Internal.getNodeFromName(z_ncFaces, "CoordinateX")[1]
+            np_coordsY = Internal.getNodeFromName(z_ncFaces, "CoordinateY")[1]
+            np_coordsZ = Internal.getNodeFromName(z_ncFaces, "CoordinateZ")[1]
+        else:
+            np_coordsX = numpy.empty(0)
+            np_coordsY = numpy.empty(0)
+            np_coordsZ = numpy.empty(0)
+
+        gath_np_coordsX = Cmpi.allgather(np_coordsX)
+        gath_np_coordsY = Cmpi.allgather(np_coordsY)
+        gath_np_coordsZ = Cmpi.allgather(np_coordsZ)
+        lenNCF = len(np_coordsX)
+        del np_coordsX, np_coordsY, np_coordsZ
+
+        self.initializeCell2Proc(fsCellType, lenNCF)
+        if z_ncFaces is not None:
+            locNCFaces = Internal.getNodeFromName(
                 z_ncFaces,
                 "ElementConnectivity"
             )[1] - 1 + self.cell2ProcDict[fsCellType][rank]
         else:
-            local_ncFaces = numpy.empty(0, dtype=Internal.E_NpyInt)
+            locNCFaces = numpy.empty(0, dtype=Internal.E_NpyInt)
 
-        allgathered_local_ncFaces = Cmpi.allgather(local_ncFaces)
-        del local_ncFaces
+        gath_locNCFaces = Cmpi.allgather(locNCFaces)
+        del locNCFaces
 
-        listQuadNQuad_local = []
+        locQNQList = []
+        uniqueCoords = numpy.empty((0,3))
+        dedupMap = numpy.empty((0), dtype=Internal.E_NpyInt)
 
+        tic = time.perf_counter()
         if Cmpi.master:
-            allgathered_x = numpy.concatenate(allgathered_x)
-            allgathered_y = numpy.concatenate(allgathered_y)
-            allgathered_z = numpy.concatenate(allgathered_z)
-            allgathered_local_ncFaces = numpy.concatenate(allgathered_local_ncFaces)
-            allgathered_nodes = numpy.hstack([
-                allgathered_x.reshape(len(allgathered_x),1),
-                allgathered_y.reshape(len(allgathered_x),1),
-                allgathered_z.reshape(len(allgathered_x),1)
+            gath_np_coordsX = numpy.concatenate(gath_np_coordsX)
+            gath_np_coordsY = numpy.concatenate(gath_np_coordsY)
+            gath_np_coordsZ = numpy.concatenate(gath_np_coordsZ)
+            gath_locNCFaces = numpy.concatenate(gath_locNCFaces)
+            shape = (len(gath_np_coordsX), 1)
+            np_coords = numpy.hstack([
+                gath_np_coordsX.reshape(*shape),
+                gath_np_coordsY.reshape(*shape),
+                gath_np_coordsZ.reshape(*shape)
             ])
 
-            cmpIdx = lambda a, b : cmp(allgathered_nodes[a], allgathered_nodes[b])
-            idx_sorted = sorted(range(len(allgathered_nodes)), key=cmp_to_key(cmpIdx))
+            # Use lexicographical order to sort by z, then y, then x
+            lexOrder = numpy.lexsort(numpy.around(np_coords, decimals=decimals).T)
+            np_sortedCoords = np_coords[lexOrder]
+            nvertices = len(np_sortedCoords)
+            toc = time.perf_counter()
+            elapsed = toc-tic
+            print(f"DEBUG: Time for sorting coords = {elapsed:.3f}.")
 
-            nnodes_old = len(allgathered_nodes)
+            # Find unique (sorted) coordinates and their indices
+            uniqueMask = numpy.ones(nvertices, dtype=bool)
+            uniqueMask[1:] = numpy.any(numpy.abs(numpy.diff(np_sortedCoords, axis=0)) > tol, axis=1)
+            uniqueIndices = numpy.where(uniqueMask)[0]
+            uniqueCoords = np_sortedCoords[uniqueMask]
 
-            np_sortedCoords = allgathered_nodes[idx_sorted]
+            # Compute the gap (ie, number of duplicates) for each unique vertex
+            duplicatesCount = numpy.diff(numpy.append(uniqueIndices, nvertices))
 
-            uniqueCoords = numpy.empty((nnodes_old,3))
-            dedupMap = numpy.empty((nnodes_old))
-            dedup2dup = numpy.empty((nnodes_old), dtype=Internal.E_NpyInt)
-            previous = None
-            j = -1
-
-            for i in range(nnodes_old):
-                if i == 0 or (abs(previous-np_sortedCoords[i])>(10**(-10))).any():
-                    j=j+1
-                    uniqueCoords[j] = np_sortedCoords[i]
-                    previous = np_sortedCoords[i]
-                    dedupMap[idx_sorted[i]] = j
-                    dedup2dup[j] = idx_sorted[i]
-                else:
-                    dedupMap[idx_sorted[i]] = j
-
-            for i in range(len(allgathered_local_ncFaces)):
-                allgathered_local_ncFaces[i] = dedupMap[allgathered_local_ncFaces[i]]
-
-            uniqueCoords.resize((j+1,3))
-            allgathered_nodes = uniqueCoords
-            del uniqueCoords
-
-            len_NCF = len(allgathered_local_ncFaces)//4
-            ncFacesCentroids = computeQuadCentroids(
-                allgathered_nodes[:,0],
-                allgathered_nodes[:,1],
-                allgathered_nodes[:,2],
-                allgathered_local_ncFaces
-            )
-
-            local_ncFaces = numpy.reshape(allgathered_local_ncFaces,(len_NCF,4))
-
-            del allgathered_local_ncFaces
-
-            print("Rank {}: local_ncFaces {}.".format(Cmpi.rank, local_ncFaces.shape[0]))
-            tic = time.perf_counter()
-
-            if self.dimPb == 2: create_fct =  create_Quad2Quad
-            else: create_fct = create_Quad4Quad
-            listQuadNQuad_local = create_fct(
-                allgathered_nodes,
-                local_ncFaces,
-                ncFacesCentroids
+            # Map each duplicate to its corresponding unique vertex index
+            dedupMap = numpy.full(nvertices, -1, dtype=Internal.E_NpyInt)
+            dedupMap[lexOrder] = numpy.repeat(
+                numpy.arange(len(uniqueCoords)),
+                duplicatesCount
             )
             toc = time.perf_counter()
-            print("Rank {}: time for hanging nodes search: {:.3f}.".format(Cmpi.rank, toc-tic))
-            print("Rank {}: size listQuadNQuad {}.".format(Cmpi.rank, listQuadNQuad_local.shape[0]))
-            listQuadNQuad_local = dedup2dup[listQuadNQuad_local]
+            elapsed = toc-tic
+            print(f"DEBUG: initPseudoQnQ: Time for dedup map build = {elapsed:.3f}.")
 
-        self.initializeCell2Proc(fsCellType, len(listQuadNQuad_local))
+            lenNCF = len(gath_locNCFaces)//4
+            gath_locNCFaces = dedupMap[gath_locNCFaces]
+            ncFacesCentroids = computeQuadCentroids(
+                uniqueCoords[:,0],
+                uniqueCoords[:,1],
+                uniqueCoords[:,2],
+                gath_locNCFaces
+            )
+            gath_locNCFaces = numpy.reshape(gath_locNCFaces, (lenNCF, 4))
+
+            print("Rank {}: locNCFaces {}.".format(rank, gath_locNCFaces.shape[0]))
+            tic = time.perf_counter()
+
+            locQNQList = create_QuadXQuad(
+                uniqueCoords,
+                gath_locNCFaces,
+                ncFacesCentroids
+            )
+            print("dedupMap:", dedupMap)
+            toc = time.perf_counter()
+            print("Rank {}: time for hanging nodes search: {:.3f}.".format(Cmpi.rank, toc-tic))
+            print("Rank {}: size listQuadNQuad {}.".format(rank, locQNQList.shape[0]))
+            locQNQList = dedupMap[locQNQList]
+
+        self.initializeCell2Proc(fsCellType, len(locQNQList))
         Internal._rmNodesFromType(self.pyTree, "Elements_t")
         if z_ncFaces is not None:
             hook = C.createHook(self.pyTree, 'nodes')
@@ -2163,13 +2165,11 @@ class FSCGNSConverter:
         gath_ids = numpy.concatenate(Cmpi.allgather(ids))
 
         if Cmpi.master:
-            listQuadNQuad = gath_ids[listQuadNQuad_local]
-            fs_cell2node = FSIntArray(
-                listQuadNQuad.shape[0], listQuadNQuad.shape[1]
-            )
+            qnqList = gath_ids[locQNQList]
+            fs_cell2node = FSIntArray(*qnqList.shape)
             numpy.copyto(
                 numpy.array(fs_cell2node.Buffer(), copy=False),
-                listQuadNQuad,
+                qnqList,
                 casting='same_kind'
             )
         else:
