@@ -313,7 +313,7 @@ def createQuad4Quad(coordinates, nonconformal_faces, ncFacesCentroids, tol=1e-6)
 
     hook = C.createHook(z, 'nodes')
     ids = C.identifyNodes(hook, zc)
-    ids_points8 = ids[ids[:] > -1] - 1
+    idsP8 = ids[ids[:] > -1] - 1
 
     offsets, cells = computeNode2Cell(
         nonconformal_faces,
@@ -322,50 +322,53 @@ def createQuad4Quad(coordinates, nonconformal_faces, ncFacesCentroids, tol=1e-6)
     )
 
     listQuad4Quad = []
-    nfaces = len(nonconformal_faces)
-    print(
-        "Quad4Quad: {} original non conformal faces (incl. {} potential "
-        "Quad4Quad). Looking for non conformal faces in 3D mesh.".format(
-            nfaces, nfaces//5)
-    )
+    uniqueIdsP8 = numpy.unique(idsP8)
+    nq = uniqueIdsP8.size
+    rowIds = numpy.arange(nq)
 
-    unique_ids_points8 = numpy.unique(ids_points8)
-    for point8 in unique_ids_points8:
-        beg = offsets[point8]
-        end = offsets[point8+1]
-        match_nonconformal_faces = cells[beg:end]
-        if len(match_nonconformal_faces) !=4 :
-            print("ERROR: {} non conformal faces match this hanging "
-                  "point. 4 non conformal faces should match (Quad4Quad).".format(
-                      len(match_nonconformal_faces)))
-            sys.exit(1)
+    # Get face ids for all point8
+    beg = offsets[uniqueIdsP8]
+    end = offsets[uniqueIdsP8+1]
+    counts = end - beg
 
-        list_nodes_B4B = nonconformal_faces[match_nonconformal_faces]
-        for position in list_nodes_B4B:
-            position_point8 = numpy.where(position==point8)[0][0]
-            if position_point8 == 0:
-                point7 = position[1]
-                point3 = position[2]
-                point6 = position[3]
-            elif position_point8 == 1:
-                point5 = position[0]
-                point6 = position[2]
-                point2 = position[3]
-            elif position_point8 == 2:
-                point1 = position[0]
-                point4 = position[1]
-                point5 = position[3]
-            elif position_point8 == 3:
-                point4 = position[0]
-                point0 = position[1]
-                point7 = position[2]
+    if not numpy.all(counts == 4):
+        raise ValueError(
+            "Each hanging point must be listed by 4 non-conformal faces."
+        )
 
-        listQuad4Quad.append([
-            point0, point1, point2, point3,
-            point4, point5, point6, point7, point8
-        ])
-
-    np_Quad4Quad = numpy.array(listQuad4Quad, dtype=Internal.E_NpyInt)
+    # Build flattened face-id array -> shape (4*nq)
+    allFaceIds = numpy.concatenate([cells[beg[i]:end[i]] for i in rowIds])
+    allFaceIds = allFaceIds.reshape(nq, 4)
+    # Fetch all faces at once -> shape (nq, 4, 4)
+    faces = nonconformal_faces[allFaceIds]
+    # Find column position of each point8 in its 4 faces
+    # Expand point8 for broadcasting
+    p8 = uniqueIdsP8[:, None, None]
+    mask = faces == p8  # shape (nq, 4, 4)
+    # Column index (0..3) where match occurs
+    pos = numpy.argmax(mask, axis=2)  # shape (nq, 4)
+    # Build array np_Quad4Quad
+    np_Quad4Quad = numpy.empty((nq, 9), dtype=Internal.E_NpyInt)
+    np_Quad4Quad[:,8] = uniqueIdsP8  # last column is point8
+    for col in range(4):
+        sel = pos[:, col]
+        rows = faces[rowIds, col]
+        mask = sel == 0
+        np_Quad4Quad[mask,7] = rows[mask,1]
+        np_Quad4Quad[mask,3] = rows[mask,2]
+        np_Quad4Quad[mask,6] = rows[mask,3]
+        mask = sel == 1
+        np_Quad4Quad[mask,5] = rows[mask,0]
+        np_Quad4Quad[mask,6] = rows[mask,2]
+        np_Quad4Quad[mask,2] = rows[mask,3]
+        mask = sel == 2
+        np_Quad4Quad[mask,1] = rows[mask,0]
+        np_Quad4Quad[mask,4] = rows[mask,1]
+        np_Quad4Quad[mask,5] = rows[mask,3]
+        mask = sel == 3
+        np_Quad4Quad[mask,4] = rows[mask,0]
+        np_Quad4Quad[mask,0] = rows[mask,1]
+        np_Quad4Quad[mask,7] = rows[mask,2]
     return np_Quad4Quad
 
 def _addBC2ZoneLoc(z, bndName, bndType, zbc, loc='FaceCenter', zdnrName=None):
