@@ -25,7 +25,11 @@ except ImportError as e:
     raise ImportError("ERROR: FSDMPyUtils not found") from e
 
 
-__all__ = ['FSCGNSConverter', 'ENABLE_PROFILING', 'buildMeshOps']
+__all__ = [
+    'FSCGNSConverter',
+    'ENABLE_PROFILING',
+    'buildMeshOps', 'BuildMeshOps'
+]
 
 
 # ---------------------------------------------------------------------------- #
@@ -507,6 +511,8 @@ def buildMeshOps(meshName, partitioningLibrary="FSZoltan",
         ])
         if verbose: meshOps.append("PrintInfo")
     return tuple(meshOps)
+    
+BuildMeshOps = buildMeshOps  # Alias
 
 
 # ---------------------------------------------------------------------------- #
@@ -2787,3 +2793,13 @@ class FSCGNSConverter:
         if Cmpi.size == 1: C.convertPyTree2File(self.pyTree, f"{filename}.plt")
         else: C.convertPyTree2File(self.pyTree, f"{filename}_{Cmpi.rank:03d}.plt")
         return
+        
+    # Create aliases
+    Convert = convert
+    Convert2CGNS = convert2CGNS
+    Convert2FSDM = convert2FSDM
+    Export = export
+    ExportFSMesh = exportFSMesh
+    ExportFSMesh2Tecplot = exportFSMesh2Tecplot
+    ExportCGNS = exportCGNS
+    ExportCGNS2Tecplot = exportCGNS2Tecplot
