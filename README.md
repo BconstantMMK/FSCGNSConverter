@@ -76,7 +76,7 @@ NB: Input arguments `inmemory`, `keepFlowSolution` and `IBM` were deleted.
 There is a single function to convert the mesh from one format to the other:
 
 ```py
-convObj.convert(**kwargs)
+convObj.Convert(**kwargs)
 ```
 
 The resulting format was inferred during the class instantiation.  
@@ -89,7 +89,7 @@ When converting to CGNS, the keyworded arguments are:
 There is a single function to convert the mesh from one format to the other:
 
 ```py
-convObj.export(filename=outfile, **kwargs)
+convObj.Export(filename=outfile, **kwargs)
 ```
 
 The output format is inferred from the filename's extension.  
@@ -98,7 +98,7 @@ When exporting the CGNS PyTree or the FS mesh, the keyworded arguments are:
 
 ### 1.3 Class attributes
 
-After calling the `convert` function, the CGNS pyTree or the FS mesh can be obtained with:
+After calling the `Convert` function, the CGNS pyTree or the FS mesh can be obtained with:
 
 ```py
 t = convObj.pyTree
@@ -125,11 +125,11 @@ caseConfig = {
 }
 
 convObj = FSCGNSConverter(meshName=meshName, **caseConfig)
-convObj.convert()
+convObj.Convert()
 
 # Get the CGNS tree or export the CGNS mesh
 t = convObj.pyTree
-convObj.export(filename="t.cgns", verbose=True)
+convObj.Export(filename="t.cgns", verbose=True)
 ```
 
 When there are boundary conditions, a mapping between FS marker indices and 
@@ -160,11 +160,11 @@ caseConfig = {
 }
 
 convObj = FSCGNSConverter(meshName=meshName, **caseConfig)
-convObj.convert()
+convObj.Convert()
 
 # Get the FS mesh or export the FS mesh
 fsmesh = convObj.fsmesh
-convObj.export(filename="mesh.h5", verbose=True)
+convObj.Export(filename="mesh.h5", verbose=True)
 ```
 
 #### 2.2.2 From a CGNS tree 
@@ -182,8 +182,8 @@ caseConfig = {
 }
 
 convObj = FSCGNSConverter(pyTree=t, **caseConfig)
-convObj.convert()
+convObj.Convert()
 
 # Save to tecplot format
-convObj.export(filename="mesh.plt")
+convObj.Export(filename="mesh.plt")
 ```
