@@ -101,13 +101,13 @@ def recoverBCsC(a, BCs, BCNames, BCTypes, tol=1.e-11):
     """Recover given BCs on a tree.
     Usage: _recoverBCs(a, BCs, BCNames, BCTypes, tol)"""
     try: import Post.PyTree as P
-    except: raise ImportError("_recoverBCs: requires Post module.")
+    except ImportError: raise ImportError("_recoverBCs: requires Post module.")
     C._deleteZoneBC__(a)
     zones = Internal.getZones(a)
     for z in zones:
         indicesF = []
         try: f = P.exteriorFaces(z, indices=indicesF)
-        except: continue
+        except (TypeError, ValueError): continue
         indicesF = indicesF[0]
         hook = C.createHook(f, 'elementCenters')
         list_BCs = []
@@ -287,7 +287,8 @@ def createQuad2Quad(coordinates, nonconformal_faces, ncFacesCentroids,
         listQuad2Quad.append(thisQuad2Quad)
     np_Quad2Quad = numpy.array(listQuad2Quad)
     #if listQuad2Quad.shape[0] != nNCFaces/3:
-    #    raise ValueError("Problem on non conformal faces: only %d out of %d have been matched." %(listQuad2Quad.shape[0],nNCFaces//3))
+    #    raise ValueError("Problem on non conformal faces: only %d out of %d "
+    #                     "have been matched." %(listQuad2Quad.shape[0], nNCFaces//3))
     return np_Quad2Quad
 
 def createQuad4Quad(coordinates, nonconformal_faces, ncFacesCentroids, tol=1e-6):
@@ -346,7 +347,7 @@ def createQuad4Quad(coordinates, nonconformal_faces, ncFacesCentroids, tol=1e-6)
     faces = nonconformal_faces[allFaceIds]
     # Find column position of each point8 in its 4 faces
     # Expand point8 for broadcasting
-    p8 = uniqueIdsP8[:, None, None]
+    p8 = uniqueIdsP8[:,None,None]
     mask = faces == p8  # shape (nq, 4, 4)
     # Column index (0..3) where match occurs
     pos = numpy.argmax(mask, axis=2)  # shape (nq, 4)
@@ -354,7 +355,7 @@ def createQuad4Quad(coordinates, nonconformal_faces, ncFacesCentroids, tol=1e-6)
     np_Quad4Quad = numpy.empty((nq, 9), dtype=Internal.E_NpyInt)
     np_Quad4Quad[:,8] = uniqueIdsP8  # last column is point8
     for col in range(4):
-        sel = pos[:, col]
+        sel = pos[:,col]
         rows = faces[rowIds, col]
         mask = sel == 0
         np_Quad4Quad[mask,7] = rows[mask,1]
@@ -879,9 +880,9 @@ class FSCGNSConverter:
             old_name_hf = rm[0]
             Internal._renameNode(self.pyTree, old_name_hf, "NonConformalFaces")
             n_NCF = Internal.getNodeFromName(self.pyTree, "NonConformalFaces")
-            if Internal.getNodeFromName(n_NCF, "PointList") != None:
+            if Internal.getNodeFromName(n_NCF, "PointList") is not None:
                 lenNCF = Internal.getNodeFromName(n_NCF, "PointList")[1][0].shape[0]
-            elif Internal.getNodeFromName(n_NCF, "ElementRange") != None:
+            elif Internal.getNodeFromName(n_NCF, "ElementRange") is not None:
                 eltRange = Internal.getNodeFromName(n_NCF, "ElementRange")[1]
                 if len(eltRange) == 1:
                     ERmin, ERmax = eltRange[0][:]
@@ -1510,7 +1511,7 @@ class FSCGNSConverter:
             )
 
         # Then we attach our boundary marker to their name in the fsmesh
-        # for marker in bMarker2BCName2.keys() :
+        # for marker in bMarker2BCName2.keys():
         if self.IBM:
             IBM_bMarkers = []
             IBM_names = []
@@ -1524,7 +1525,7 @@ class FSCGNSConverter:
                 )
             self.initializeFSBCCoordinates(fsdatanames, fs_surfaceCellTypes)
 
-        for marker, name in zip(bc_markers_all, bc_names_all) :
+        for marker, name in zip(bc_markers_all, bc_names_all):
             self.fsmesh.SetCellAttributeValueName(FS_AT_CADGroupID, marker, name)
             if self.IBM and marker in self.bMarker2BCNameDict and self.bMarker2BCNameDict[marker].startswith("IBMWall"):
                 IBM_bMarkers.append(marker)
@@ -2808,3 +2809,4 @@ class FSCGNSConverter:
     ExportFSMesh2Tecplot = exportFSMesh2Tecplot
     ExportCGNS = exportCGNS
     ExportCGNS2Tecplot = exportCGNS2Tecplot
+
