@@ -55,6 +55,8 @@ convObj.export(filename="mesh.h5")
 FSLog(clac, 0, "------ Conversion done -------")
 
 fsmeshConv = FSMesh(clac)
-fsmeshConv.ImportMeshHDF5(Filename="mesh.h5") or FSError.PrintAndExit()
+if not fsmeshConv.ImportMeshHDF5(Filename="mesh.h5"):
+    FSError.PrintAndExit()
 fsmeshConv.PrintInfo()
-fsmeshConv.ExportMeshTECPLOT(Filename="mesh.dat") or FSError.PrintAndExit()
+if not fsmeshConv.ExportMeshTECPLOT(Filename="mesh.dat"):
+    FSError.PrintAndExit()

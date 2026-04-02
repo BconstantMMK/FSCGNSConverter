@@ -1,7 +1,12 @@
 import os
 import sys
 
-from FSDataManager import FSClac, FSLog, FSError, FSMesh
+from FSDataManager import (
+    FSClac,
+    FSLog,
+    FSError,
+    FSMesh
+)
 
 from FSCGNSConverter.FSCGNSConverter import FSCGNSConverter
 from utils import CompareMeshes
@@ -14,9 +19,12 @@ if clac.GetNProcs() > 1:
 
 fsmeshOrig = FSMesh(clac)
 
-fsmeshOrig.ImportMeshTAU(Filename="./tau.grid") or FSError.PrintAndExit()
-fsmeshOrig.RepartitionMeshRCB() or FSError.PrintAndExit()
-fsmeshOrig.ExportMeshTAU(Filename="mesh.grid") or FSError.PrintAndExit()
+if not fsmeshOrig.ImportMeshTAU(Filename="./tau.grid"):
+    FSError.PrintAndExit()
+if not fsmeshOrig.RepartitionMeshRCB():
+    FSError.PrintAndExit()
+if not fsmeshOrig.ExportMeshTAU(Filename="mesh.grid"):
+    FSError.PrintAndExit()
 
 # provide boundary marker information, as it is required at the moment
 bcDict = {
@@ -42,9 +50,15 @@ convObj.export(filename="mesh.h5")
 FSLog(clac, 0, "------ Conversions done -------")
 
 fsmeshConv = FSMesh(clac)
-fsmeshConv.ImportMeshHDF5(Filename="mesh.h5") or FSError.PrintAndExit()
+if not fsmeshConv.ImportMeshHDF5(Filename="mesh.h5"):
+    FSError.PrintAndExit()
 
-if not CompareMeshes(fsmeshOrig, fsmeshConv, checkDatasets=True, checkCellAttributes=False):
+if not CompareMeshes(
+    fsmeshOrig,
+    fsmeshConv,
+    checkDatasets=True,
+    checkCellAttributes=False
+):
     FSError.Print()
     fsmeshOrig.PrintInfo()
     fsmeshConv.PrintInfo()

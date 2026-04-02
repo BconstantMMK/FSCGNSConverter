@@ -21,19 +21,37 @@ def _addBCsBySubzone(t, nxblocks=1, is3D=True, quadFaces=True):
     C._addBC2Zone(t, 'farfield', 'BCFarfield', subzone=subzone)
     subzone = cartFunc(((N-1.)*nxblocks, 0., 0.), (0., 1., Lz), (1, N, Nz))
     C._addBC2Zone(t, 'outlet', 'BCOutflow', subzone=subzone)
-    return None
 
 def _addBCsByVertexPL(t, is3D=True):
     Nz = N if is3D else 1
-    C._addBC2Zone(t, 'inlet', 'BCInflow', pointList=[(j*N**2 + i*N + 1) for j in range(Nz) for i in range(N)])
-    C._addBC2Zone(t, 'wall', 'BCWallInviscid', pointList=[(j*N**2 + i + 1) for j in range(Nz) for i in range(N)])
-    C._addBC2Zone(t, 'farfield', 'BCFarfield', pointList=[(j*N**2 + (N-1)*N + i + 1) for j in range(Nz) for i in range(N)])
-    C._addBC2Zone(t, 'outlet', 'BCOutflow', pointList=[(j*N**2 + (N-1) + i*N + 1) for j in range(Nz) for i in range(N)])
+    C._addBC2Zone(
+        t,
+        'inlet',
+        'BCInflow',
+        pointList=[(j*N**2 + i*N + 1) for j in range(Nz) for i in range(N)]
+    )
+    C._addBC2Zone(
+        t,
+        'wall',
+        'BCWallInviscid',
+        pointList=[(j*N**2 + i + 1) for j in range(Nz) for i in range(N)]
+    )
+    C._addBC2Zone(
+        t,
+        'farfield',
+        'BCFarfield',
+        pointList=[(j*N**2 + (N-1)*N + i + 1) for j in range(Nz) for i in range(N)]
+    )
+    C._addBC2Zone(
+        t,
+        'outlet',
+        'BCOutflow',
+        pointList=[(j*N**2 + (N-1) + i*N + 1) for j in range(Nz) for i in range(N)]
+    )
     print([(j*N**2 + i*N + 1) for j in range(Nz) for i in range(N)])
     print([(j*N**2 + i + 1) for j in range(Nz) for i in range(N)])
     print([(j*N**2 + (N-1)*N + i + 1) for j in range(Nz) for i in range(N)])
     print([(j*N**2 + (N-1) + i*N + 1) for j in range(Nz) for i in range(N)])
-    return None
 
 
 # --- Without bcDict defined (ignoring BCs during conversion) --- #
@@ -79,8 +97,21 @@ testH5(convObj.clac, convObj.fsmesh, 3)
 # a = G.cartTetra((0., 0., 0.), (1., 1., 1.), (N, N, N))
 # b = G.cartHexa((N-1., 0., 0.), (1., 1., 1.), (N, N, N))
 # t = C.mergeConnectivity(a, b, boundary=0)
-# C._addBC2Zone(t, 'inlet', 'BCInflow', pointList=[(j*N**2 + i*N + 1) for j in range(N) for i in range(N)])
-# C._addBC2Zone(t, 'outlet', 'BCOutflow', pointList=[(N*N**2 + j*(N-1)*N + (N-2) + i*(N-1) + 1) for j in range(N) for i in range(N)])
+# C._addBC2Zone(
+#     t,
+#     'inlet',
+#     'BCInflow',
+#     pointList=[(j*N**2 + i*N + 1) for j in range(N) for i in range(N)]
+# )
+# C._addBC2Zone(
+#     t,
+#     'outlet',
+#     'BCOutflow',
+#     pointList=[
+#         (N*N**2 + j*(N-1)*N + (N-2) + i*(N-1) + 1)
+#         for j in range(N) for i in range(N)
+#     ]
+# )
 # convObj = FSCGNSConverter(pyTree=t)
 # convObj.convert()
 # testH5(convObj.clac, convObj.fsmesh, 6)
@@ -133,10 +164,28 @@ testH5(convObj.clac, convObj.fsmesh, 13)
 # a = G.cartTetra((0., 0., 0.), (1., 1., 1.), (N, N, N))
 # b = G.cartHexa((N-1., 0., 0.), (1., 1., 1.), (N, N, N))
 # t = C.mergeConnectivity(a, b, boundary=0)
-# C._addBC2Zone(t, 'inlet', 'BCInflow', pointList=[(j*N**2 + i*N + 1) for j in range(N) for i in range(N)])
-# C._addBC2Zone(t, 'outlet', 'BCOutflow', pointList=[(N*N**2 + j*(N-1)*N + (N-2) + i*(N-1) + 1) for j in range(N) for i in range(N)])
+# C._addBC2Zone(
+#     t,
+#     'inlet',
+#     'BCInflow',
+#     pointList=[(j*N**2 + i*N + 1) for j in range(N) for i in range(N)]
+# )
+# C._addBC2Zone(
+#     t,
+#     'outlet',
+#     'BCOutflow',
+#     pointList=[
+#         (N*N**2 + j*(N-1)*N + (N-2) + i*(N-1) + 1)
+#         for j in range(N) for i in range(N)
+#     ]
+# )
 # print([(j*N**2 + i*N + 1) for j in range(N) for i in range(N)])
-# print([(N*N**2 + j*(N-1)*N + (N-2) + i*(N-1) + 1) for j in range(N) for i in range(N)])
+# print(
+#     [
+#         (N*N**2 + j*(N-1)*N + (N-2) + i*(N-1) + 1)
+#         for j in range(N) for i in range(N)
+#     ]
+# )
 # convObj = FSCGNSConverter(pyTree=t, bcDict=bcDict)
 # convObj.convert()
 # testH5(convObj.clac, convObj.fsmesh, 14)

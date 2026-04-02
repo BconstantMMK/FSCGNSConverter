@@ -1,9 +1,9 @@
-import os
-import sys
-
-import Converter as C
-
-from FSDataManager import FSClac, FSLog, FSError, FSMesh
+from FSDataManager import (
+    FSClac,
+    FSLog,
+    FSError,
+    FSMesh
+)
 
 from FSCGNSConverter.FSCGNSConverter import FSCGNSConverter
 
@@ -19,8 +19,10 @@ bcDict = {
 clac = FSClac()
 fsmeshOrig = FSMesh(clac)
 
-fsmeshOrig.ImportMeshTAU(Filename="./tau.grid") or FSError.PrintAndExit()
-fsmeshOrig.RepartitionMeshRCB() or FSError.PrintAndExit()
+if not fsmeshOrig.ImportMeshTAU(Filename="./tau.grid"):
+    FSError.PrintAndExit()
+if not fsmeshOrig.RepartitionMeshRCB():
+    FSError.PrintAndExit()
 
 FSLog(clac, 0, "------ Conversion FSDM -> CGNS NGon -------")
 
