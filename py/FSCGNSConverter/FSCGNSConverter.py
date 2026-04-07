@@ -107,7 +107,7 @@ def _fixNodesForFlowSolution(t):
             n = Internal.getNodeFromName(
                 n_FSC, f"{flowSolutionName}.{arrayName}"
             )
-            Internal.newDataArray(arrayName, value=n[1], parent=n_newFS)
+            Internal.newDataArray(arrayName[:32], value=n[1], parent=n_newFS)
     Internal._rmNodesByName(t, "FlowSolution#Centers")
 
 
@@ -2180,8 +2180,9 @@ class FSCGNSConverter:
                     parent=zone,
                 )
                 for i, augStateName in enumerate(flowSolutionNames):
+                    fsolName = f"{dsName}.{augStateName}"[:32]
                     Internal.newDataArray(
-                        f"{dsName}.{augStateName}",
+                        fsolName,
                         value=np_flowSolutionValues[:, i],
                         parent=n_FS,
                     )
@@ -2198,7 +2199,7 @@ class FSCGNSConverter:
                         )
                         for j, flowSolutionName in enumerate(flowSolutionNames):
                             Internal.newDataArray(
-                                flowSolutionName,
+                                flowSolutionName[:32],
                                 value=np_flowSolutionValues[:, j][
                                     self.indicesPerBdr[i]
                                 ],
