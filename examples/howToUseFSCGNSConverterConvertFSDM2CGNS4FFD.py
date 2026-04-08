@@ -1,13 +1,10 @@
-from FSDataManager import (
-    FSClac,
-    FSLog,
-    FSError,
-    FSMesh
-)
-
+from FSDataManager import FSClac
+from FSDataManager import FSLog
+from FSDataManager import FSError
+from FSDataManager import FSMesh
 from FSCGNSConverter.FSCGNSConverter import FSCGNSConverter
 
-# This script can be run also in parallel
+
 bcDict = {
     1: "BCWallViscous",
     2: "BCWallViscous",
@@ -16,19 +13,24 @@ bcDict = {
     5: "BCFarfield"
 }
 
-clac = FSClac()
-fsmeshOrig = FSMesh(clac)
 
-if not fsmeshOrig.ImportMeshTAU(Filename="./tau.grid"):
-    FSError.PrintAndExit()
-if not fsmeshOrig.RepartitionMeshRCB():
-    FSError.PrintAndExit()
+def main():
+    clac = FSClac()
+    fsmeshOrig = FSMesh(clac)
 
-FSLog(clac, 0, "------ Conversion FSDM -> CGNS NGon -------")
+    if not fsmeshOrig.ImportMeshTAU(Filename="./tau.grid"):
+        FSError.PrintAndExit()
+    if not fsmeshOrig.RepartitionMeshRCB():
+        FSError.PrintAndExit()
 
-# Unlike this example, you will need to keep FlowSolutions for use in FFD
-convObj = FSCGNSConverter(meshName="mesh.grid", bcDict=bcDict, datasets=[])
-convObj.convert(forFFDX=True)
-convObj.export(filename="mesh_ngon.cgns")
+    # Unlike what's shown in this example, FlowSolutions must be kept in FFD
+    FSLog(clac, 0, "------ Conversion FSDM -> CGNS NGon -------")
+    convObj = FSCGNSConverter(meshName="mesh.grid", bcDict=bcDict, datasets=[])
+    convObj.convert(forFFDX=True)
+    convObj.export(filename="mesh_ngon.cgns")
+    FSLog(clac, 0, "------ Conversion done -------")
 
-FSLog(clac, 0, "------ Conversions done -------")
+
+if __name__ == "__main__":
+   main()
+

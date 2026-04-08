@@ -1,0 +1,99 @@
+# Guide (user-friendly):
+# https://packaging.python.org/en/latest/guides/writing-pyproject-toml/
+
+# Specification (technical, formal):
+# https://packaging.python.org/en/latest/specifications/pyproject-toml/
+
+# Specifies tools required to build the package, including setuptools setuptools-scm, and wheel for packaging, versioning and distribution.
+[build-system]
+requires = ["setuptools>=42", "setuptools-scm>=8.1", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# Project metadata and configuration options.
+[project]
+name = "FSCGNSConverter"  # "fscgnsconverter"
+description = """
+FSCGNSConverter is a mesh conversion FS plugin that facilitates data 
+exchange between the CODA ecosystem and ONERA's CGNS pre- and 
+post-processing tools.
+"""
+readme = "README.rst"
+authors = [{name = "ONERA (The French Aerospace Lab)"}]
+requires-python = ">=3.8"
+dynamic = ["version"]
+
+# List of runtime dependencies needed by this package. These are installed with the package.
+dependencies = [
+    "numpy",
+#    "FSDataManager",
+#    "FSDMPyUtils",
+#    "XCore",
+#    "Converter",
+#    "Generator",
+#    "Transform",
+#    "Post",
+#    "Intersector",
+]
+
+# Defines optional dependency groups. Users can install these with `pip install package[dev]`.
+[project.optional-dependencies]
+dev = [
+    "Sphinx<7",
+    "black",
+    "docutils<0.19",
+    "flake8",
+    "flake8-pyproject",
+    "pylint",
+    "pytest",
+    "pytest-cov",
+    "sphinx-rtd-theme<2",
+    "watchdog",
+    "wheel",
+    # Add any additional development dependencies here
+]
+
+# Defines command-line scripts and their entry points. Creates an executable for the package.
+[project.scripts]
+#"fscgnsconverter" = "fscgnsconverter.__main__:main"
+
+# Ensures non-code files are included in the package.
+[tool.setuptools]
+include-package-data = true
+
+# Setuptools-specific configuration.
+[tool.setuptools.packages]
+find = { where = ["py"] }
+#find = { where = ["src"] }
+
+[tool.setuptools_scm]
+version_file = "src/fscgnsconverter/_version.py"
+
+# Specifies configuration options for building a universal wheel.
+[tool.bdist_wheel]
+universal = true
+
+# Configuration for black code style checks.
+[tool.black]
+target_version = ["py38"]
+line-length = 88
+extend-exclude = "_version\\.py"
+
+# Configuration for flake8 code style checks.
+[tool.flake8]
+ignore = ["E203","W503"]
+max-line-length = 88
+
+# Configuration for pylint code style checks.
+[tool.pylint]
+max-line-length = 88
+ignore = ["venv", "build"]
+ignore-patterns = ["_version\\.py"]
+disable = [
+    "missing-class-docstring",
+    "missing-function-docstring",
+    "missing-module-docstring",
+    "protected-access",  # W0212
+    "invalid-name",  # C0103
+    "import-outside-toplevel",  # C0415
+]
+good-names-rgxs = "^[_a-z][_a-z0-9]?$"

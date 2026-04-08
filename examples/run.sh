@@ -1,5 +1,5 @@
 #! /bin/sh
-./clean
+./clean.sh
 
 set -e
 
