@@ -1464,7 +1464,7 @@ class FSCGNSConverter:
 
         n_zoneBC = Internal.getNodeFromType(self.pyTree, "ZoneBC_t")
         if n_zoneBC is None:
-            return []
+            return None
         pytree_bc_nodes = Internal.getNodesFromType(n_zoneBC, "BC_t")
         current_automatic_marker = 1
         
@@ -1581,7 +1581,7 @@ class FSCGNSConverter:
                 BC_wall_coords_y,
                 BC_wall_coords_z,
             ]
-        return []
+        return None
 
     @profile_time
     def initializeFSBCs(self, IBMDatasets=None):
@@ -1639,7 +1639,12 @@ class FSCGNSConverter:
                 IBM_bMarkers.append(marker)
                 IBM_names.append(self.bMarker2BCNameDict[marker])
 
-        if self.IBM and len(IBMDatasets) >= 4:
+        if (
+            self.IBM
+            and isinstance(IBMDatasets, list)
+            and len(IBMDatasets) >= 4
+            and IBM_names
+        ):
             IBMDataset1 = []
             IBMDataset2 = []
             IBMDataset3 = []
@@ -1685,7 +1690,7 @@ class FSCGNSConverter:
                 )
 
     @profile_time
-    def initializeFSBCs_MPI(self, IBMDatasets=[]):
+    def initializeFSBCs_MPI(self, IBMDatasets=None):
         # if not self.bcDict: return  # TODO
         np_markerArray = numpy.zeros(
             self.nsurfaceCells, dtype=Internal.E_NpyInt
@@ -1762,7 +1767,12 @@ class FSCGNSConverter:
                 IBM_bMarkers.append(marker)
                 IBM_names.append(self.bMarker2BCNameDict[marker])
 
-        if self.IBM and len(IBMDatasets) >= 4 and IBM_names:
+        if (
+            self.IBM
+            and isinstance(IBMDatasets, list)
+            and len(IBMDatasets) >= 4
+            and IBM_names
+        ):
             IBMDataset1 = []
             IBMDataset2 = []
             IBMDataset3 = []
