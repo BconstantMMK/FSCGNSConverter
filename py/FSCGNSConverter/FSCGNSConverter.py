@@ -530,8 +530,8 @@ def buildMeshOps(
 ):
     if partitioningLibrary == "FSZoltan":
         from importlib.util import find_spec
-
         if find_spec("FSZoltan"):
+            import FSZoltan
             partitioningCmd = "RepartitionMeshZOLTAN"
         else:
             partitioningCmd = "RepartitionMeshPARMETIS"
