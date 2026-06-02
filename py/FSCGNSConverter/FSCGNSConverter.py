@@ -2479,10 +2479,13 @@ class FSCGNSConverter:
             duplicatesCount = numpy.diff(numpy.append(uniqueIndices, nvertices))
 
             # Map each duplicate to its corresponding unique vertex index
+            # dedupMap: original -> unique
             dedupMap = numpy.full(nvertices, -1, dtype=Internal.E_NpyInt)
             dedupMap[lexOrder] = numpy.repeat(
                 numpy.arange(len(uniqueCoords)), duplicatesCount
             )
+            # dedup2dup: unique -> representative original
+            dedup2dup = lexOrder[uniqueIndices]
             toc = time.perf_counter()
             elapsed = toc - tic
             print(
@@ -2515,7 +2518,7 @@ class FSCGNSConverter:
             print(
                 f"Rank {rank:d}: size listQuadNQuad {locQNQList.shape[0]}."
             )
-            locQNQList = dedupMap[locQNQList]
+            locQNQList = dedup2dup[locQNQList]
 
         self.initializeCell2Proc(fsCellType, len(locQNQList))
         Internal._rmNodesFromType(self.pyTree, "Elements_t")
