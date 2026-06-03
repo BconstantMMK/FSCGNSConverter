@@ -1161,7 +1161,7 @@ class FSCGNSConverter:
                     zbcs.append(zbc)
 
                 z = C.convertArray2Hexa(z)
-                if float(C.__version__) < 4.2:
+                if float(C.__version__) < 5.0:
                     z = G.close(z)
                 self.nvertices = int(Internal.getValue(z)[0][0])
                 nBCs = len(bcTypes)
