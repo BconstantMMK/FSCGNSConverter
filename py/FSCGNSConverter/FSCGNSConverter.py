@@ -2359,8 +2359,6 @@ class FSCGNSConverter:
         )
 
         locNCFaces = numpy.reshape(locNCFaces, (lenNCF, 4))
-        if self.verbose:
-            tic = time.perf_counter()
         if self.dimPb == 2:
             createQuadNQuad = createQuad2Quad
         else:
@@ -2369,12 +2367,6 @@ class FSCGNSConverter:
             np_coords, locNCFaces, ncFacesCentroids
         )  # plane, tol
 
-        if self.verbose:
-            toc = time.perf_counter()
-            print(
-                f"[{self.clac.ProcID()}] DEBUG: Time for hanging nodes "
-                f"search: {toc - tic:.3f}."
-            )
         Internal._rmNodesFromType(self.pyTree, "Elements_t")
         hook = C.createHook(self.pyTree, "nodes")
         ids = C.identifyNodes(hook, z_ncFaces)
@@ -2442,7 +2434,6 @@ class FSCGNSConverter:
         uniqueCoords = numpy.empty((0, 3))
         dedupMap = numpy.empty((0), dtype=Internal.E_NpyInt)
 
-        tic = time.perf_counter()
         if Cmpi.master:
             gath_np_coordsX = numpy.concatenate(gath_np_coordsX)
             gath_np_coordsY = numpy.concatenate(gath_np_coordsY)
@@ -2463,9 +2454,6 @@ class FSCGNSConverter:
             )
             np_sortedCoords = np_coords[lexOrder]
             nvertices = len(np_sortedCoords)
-            toc = time.perf_counter()
-            elapsed = toc - tic
-            print(f"DEBUG: Time for sorting coords = {elapsed:.3f}.")
 
             # Find unique (sorted) coordinates and their indices
             uniqueMask = numpy.ones(nvertices, dtype=bool)
@@ -2486,11 +2474,6 @@ class FSCGNSConverter:
             )
             # dedup2dup: unique -> representative original
             dedup2dup = lexOrder[uniqueIndices]
-            toc = time.perf_counter()
-            elapsed = toc - tic
-            print(
-                f"DEBUG: initPseudoQnQ: Time for dedup map build = {elapsed:.3f}."
-            )
 
             lenNCF = len(gath_locNCFaces) // 4
             gath_locNCFaces = dedupMap[gath_locNCFaces]
@@ -2502,21 +2485,8 @@ class FSCGNSConverter:
             )
             gath_locNCFaces = numpy.reshape(gath_locNCFaces, (lenNCF, 4))
 
-            print(
-                f"Rank {rank:d}: locNCFaces {gath_locNCFaces.shape[0]}."
-            )
-            tic = time.perf_counter()
-
             locQNQList = createQuadNQuad(
                 uniqueCoords, gath_locNCFaces, ncFacesCentroids
-            )
-            toc = time.perf_counter()
-            print(
-                f"Rank {rank:d}: time for hanging nodes search: "
-                f"{toc - tic:.3f}."
-            )
-            print(
-                f"Rank {rank:d}: size listQuadNQuad {locQNQList.shape[0]}."
             )
             locQNQList = dedup2dup[locQNQList]
 
@@ -2561,7 +2531,6 @@ class FSCGNSConverter:
         uniqueCoords = numpy.empty((0, 3))
         dedupMap = numpy.empty((0), dtype=Internal.E_NpyInt)
 
-        tic = time.perf_counter()
         rank = self.clac.GetProcID()
         if Cmpi.master:
             # Use lexicographical order to sort by z, then y, then x
@@ -2570,9 +2539,6 @@ class FSCGNSConverter:
             )
             np_sortedCoords = np_coords[lexOrder]
             nvertices = len(np_sortedCoords)
-            toc = time.perf_counter()
-            elapsed = toc - tic
-            print(f"DEBUG: Time for sorting coords = {elapsed:.3f}.")
 
             # Find unique (sorted) coordinates and their indices
             uniqueMask = numpy.ones(nvertices, dtype=bool)
@@ -2590,9 +2556,6 @@ class FSCGNSConverter:
             dedupMap[lexOrder] = numpy.repeat(
                 numpy.arange(len(uniqueCoords)), duplicatesCount
             )
-            toc = time.perf_counter()
-            elapsed = toc - tic
-            print(f"DEBUG: Time for dedup map build = {elapsed:.3f}.")
 
         if Cmpi.master:
             print("Removing duplicated vertices from mesh connectivity.")
@@ -2767,13 +2730,6 @@ class FSCGNSConverter:
                         dataset,
                         casting="no",
                     )
-
-        toc = time.perf_counter()
-        elapsed = max(Cmpi.allgather(toc - tic))
-        if rank == 0 and self.verbose:
-            print(
-                f"DEBUG: Time for parallelDeduplicateNodesFSMesh = {elapsed:.3f}."
-            )
 
     def releaseResources(self):
         """Delete class attributes that are no longer needed"""
