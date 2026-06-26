@@ -6,7 +6,7 @@
 
 # Specifies tools required to build the package, including setuptools setuptools-scm, and wheel for packaging, versioning and distribution.
 [build-system]
-requires = ["setuptools>=42", "setuptools-scm>=8.1", "wheel"]
+requires = ["setuptools>=42", "setuptools-scm>=8.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 # Project metadata and configuration options.
@@ -66,7 +66,7 @@ find = { where = ["py"] }
 #find = { where = ["src"] }
 
 [tool.setuptools_scm]
-version_file = "src/fscgnsconverter/_version.py"
+version_file = "py/FSCGNSConverter/_version.py"
 
 # Specifies configuration options for building a universal wheel.
 [tool.bdist_wheel]
