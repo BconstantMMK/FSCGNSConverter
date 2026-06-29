@@ -2898,7 +2898,7 @@ class FSCGNSConverter:
             # Convert ME to NGon
             if Cmpi.master and self.verbose:
                 print("Converting ME to NGon.")
-            C._convertArray2NGon(self.pyTree, method="topologic",
+            C._convertArray2NGon(self.pyTree, method="geometric",
                                  recoverBC=True, api=3)
             # Rename zone
             z = Internal.getZones(self.pyTree)[0]
