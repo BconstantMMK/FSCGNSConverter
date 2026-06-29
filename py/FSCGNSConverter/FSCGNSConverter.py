@@ -524,11 +524,14 @@ def initializeCell2ProcOutsideClass(clac, ncellsOfType=0):
 
 def buildMeshOps(
     meshName,
-    partitioningLibrary="FSZoltan",
+    partitioningLibrary="PARMETIS",
     preserveCellStacks=True,
     verbose=True,
 ):
-    if partitioningLibrary == "FSZoltan":
+    if partitioningLibrary.upper() not in ["PARMETIS", "FSZOLTAN"]:
+        raise ValueError(f"WARNING: Partitioning library {partitioningLibrary} "
+                         "not found. Options are: FSZoltan, ParMETIS.")
+    if partitioningLibrary.upper() == "FSZOLTAN":
         from importlib.util import find_spec
         if find_spec("FSZoltan"):
             import FSZoltan
@@ -780,7 +783,7 @@ class FSCGNSConverter:
         if forFFDX:
             self.convert2NGon4FFD(**kwargs)
             self.mergeBCsByMarker()
-            # G._rmOrphans(self.pyTree)
+            G._rmOrphans(self.pyTree)
         else:
             G._close(self.pyTree)
 
@@ -2786,7 +2789,7 @@ class FSCGNSConverter:
 
         # In older versions of Cassiopee where Multiple-Elements were not
         # supported, break ME into BEs
-        if float(C.__version__) < 5.0:
+        if float(C.__version__) < 4.2:
             # Break zones such that there is one type of volume element per zone
             if Cmpi.master and self.verbose:
                 print(
@@ -2794,7 +2797,7 @@ class FSCGNSConverter:
                 )
             t3 = C.breakConnectivity(self.pyTree)
 
-            # Limitation fixed in Cassiopee 5.0
+            # Limitation fixed in Cassiopee 4.2
             zones = Internal.getZones(t3)
             for zone in zones:
                 n_elts = Internal.getNodesFromType(zone, "Elements_t")
@@ -2895,7 +2898,8 @@ class FSCGNSConverter:
             # Convert ME to NGon
             if Cmpi.master and self.verbose:
                 print("Converting ME to NGon.")
-            C._convertArray2NGon(self.pyTree, recoverBC=True, api=3)
+            C._convertArray2NGon(self.pyTree, method="topologic",
+                                 recoverBC=True, api=3)
             # Rename zone
             z = Internal.getZones(self.pyTree)[0]
             z[0] = f"zone.{Cmpi.rank:d}"
