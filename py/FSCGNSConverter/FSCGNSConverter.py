@@ -754,7 +754,7 @@ class FSCGNSConverter:
         self.__convert(**kwargs)
 
     def convert2CGNS(self, forOverset=False, forFFDX=False, **kwargs):
-        """Convert a mesh from FSDM to CGNS"""
+        """Convert a mesh from FS to CGNS"""
         if forOverset:
             includeSurfaceData = False
             includeGhostCells = True
@@ -823,7 +823,7 @@ class FSCGNSConverter:
         """Import and/or fetch FS mesh data and initialize the corresponding
         class attributes"""
         if Cmpi.master and self.verbose:
-            print("Fetching FSDM mesh data.")
+            print("Fetching FS mesh data.")
         if self.fsmesh is None:  # Import FS mesh
             self.fsmesh = FSMesh(self.clac)
             meshOps = buildMeshOps(
@@ -2139,7 +2139,7 @@ class FSCGNSConverter:
     @profile_time
     def recoverFSFlowSolution(self):
         """
-        Fetch FSDM flow solution data and initialize that of the CGNS pyTree
+        Fetch FS flow solution data and initialize that of the CGNS pyTree
         """
         datasets = set(str(d) for d in self.fsmesh.GetUnstructDatasetNames())
         if isinstance(self.datasets, set):
@@ -2148,7 +2148,7 @@ class FSCGNSConverter:
             return
 
         if Cmpi.master and self.verbose:
-            print("Fetching FSDM flow solution data.")
+            print("Fetching FS flow solution data.")
 
         for dsName in datasets:
             if self.coordsName[:-1] in dsName:
@@ -2189,14 +2189,13 @@ class FSCGNSConverter:
             if fs_cellTypes[0] in self.fsVolumeCellTypes:
                 zone = Internal.getZones(self.pyTree)[0]
                 n_FS = Internal.newFlowSolution(
-                    name="FlowSolution#Centers",
+                    name=f"FlowSolution#{dsName}",
                     gridLocation="CellCenter",
                     parent=zone,
                 )
-                for i, augStateName in enumerate(flowSolutionNames):
-                    fsolName = f"{dsName}.{augStateName}"[:32]
+                for i, flowSolutionName in enumerate(flowSolutionNames):
                     Internal.newDataArray(
-                        fsolName,
+                        f"{flowSolutionName}"[:32],
                         value=np_flowSolutionValues[:, i],
                         parent=n_FS,
                     )
