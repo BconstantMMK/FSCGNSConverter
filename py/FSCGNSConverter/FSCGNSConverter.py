@@ -538,7 +538,8 @@ def buildMeshOps(
             partitioningCmd = "RepartitionMeshZOLTAN"
         else:
             partitioningCmd = "RepartitionMeshPARMETIS"
-            print("WARNING: FSZoltan not found, ParMETIS used instead.")
+            if Cmpi.master:
+                print("WARNING: FSZoltan not found, ParMETIS used instead.")
     else:
         partitioningCmd = "RepartitionMeshPARMETIS"
 
