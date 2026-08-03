@@ -525,7 +525,7 @@ def initializeCell2ProcOutsideClass(clac, ncellsOfType=0):
 def buildMeshOps(
     meshName,
     partitioningLibrary="PARMETIS",
-    preserveCellStacks=True,
+    preserveCellStacks=False,
     verbose=True,
 ):
     if partitioningLibrary.upper() not in ["PARMETIS", "FSZOLTAN"]:
