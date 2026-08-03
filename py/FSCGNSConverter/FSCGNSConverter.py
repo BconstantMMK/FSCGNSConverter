@@ -786,7 +786,11 @@ class FSCGNSConverter:
             self.mergeBCsByMarker()
             G._rmOrphans(self.pyTree)
         else:
-            G._close(self.pyTree)
+            status = {}
+            BCInfo = C.getBCs(self.pyTree)
+            G._close(self.pyTree, status=status)
+            if status.get("modified"):
+                C._recoverBCs(self.pyTree, BCInfo=BCInfo, removeBC=True)
 
     def convert2FSDM(self):
         """Convert a mesh from CGNS to FSDM"""
