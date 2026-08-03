@@ -749,6 +749,7 @@ class FSCGNSConverter:
         self.bMarker2BCNameDict = {}
         self.bMarker2FacePLDict = {}
         self.dict_bc_elts = {}
+        self.eltRangeMap = {}
 
     def convert(self, **kwargs):
         """Main routine to convert a mesh from FSDM to CGNS or vice versa"""
@@ -2268,14 +2269,20 @@ class FSCGNSConverter:
                 datasetName, FSDatasetInfo(fsVarNames, fsVarSpecs, fs_loc)
             )
             try:
-                fs_vars = self.fsmesh.GetUnstructDataset(
-                    datasetName
-                ).GetValues()
-                numpy.copyto(
-                    numpy.array(fs_vars.Buffer(), copy=False),
-                    np_vars,
-                    casting="no",
+                fs_vars = numpy.asarray(
+                    self.fsmesh.GetUnstructDataset(
+                        datasetName
+                    ).GetValues().Buffer()
                 )
+                if loc == "CellCenter":
+                    for cgnsStart, fsdmStart, count in self.eltRangeMap.values():
+                        numpy.copyto(
+                            fs_vars[fsdmStart:fsdmStart+count, :],
+                            np_vars[cgnsStart:cgnsStart+count, :],
+                            casting="no"
+                        )
+                else:
+                    numpy.copyto(fs_vars, np_vars, casting="no")
             except BufferError:
                 pass
 
@@ -3003,6 +3010,19 @@ class FSCGNSConverter:
     @profile_time
     def reorderCells(self):
         """Reorder CGNS volume and surface element types as in FSDM"""
+        def reorderVolumicCells__(cellType2RangeDict):
+            fsdmOrder = [10, 12, 14, 17]  # TETRA, PYRA, PENTA, HEXA
+            remap = {}
+            fsdmStart = 0
+            for cellType in fsdmOrder:
+                if cellType not in cellType2RangeDict:
+                    continue
+                cgnsRange = cellType2RangeDict[cellType]
+                cgnsStart = cgnsRange[0] - 1
+                count = cgnsRange[1] - cgnsRange[0] + 1
+                remap[cellType] = (cgnsStart, fsdmStart, count)
+                fsdmStart += count
+            return remap
         # Loop over volume and surface element types and store their range
         cellType2RangeDict = {}
         n_elts = Internal.getNodesFromType(self.pyTree, "Elements_t")
@@ -3026,7 +3046,9 @@ class FSCGNSConverter:
                 if any(ct not in [5, 7] for ct in cellTypeList[i + 1:]):
                     areCellTypesOrdered = False
                     break
+
         if areCellTypesOrdered:
+            self.eltRangeMap = reorderVolumicCells__(cellType2RangeDict)
             return None
 
         if Cmpi.master and self.verbose:
@@ -3048,12 +3070,13 @@ class FSCGNSConverter:
             ]
             ntotCells += nCells
 
+        self.eltRangeMap = reorderVolumicCells__(newCellType2RangeDict)
+
         # Loop over volume and surface element types to assign their new range
         for n_elt in n_elts:
             cellType = Internal.getValue(n_elt)[0]
             eltRange = Internal.getNodeFromName(n_elt, "ElementRange")
             eltRange[1] = newCellType2RangeDict[cellType]
-            print("cellType:", cellType, ", eltRange[1]:", eltRange[1])
 
         # Loop over all CGNS BC nodes and offset vertex point lists
         # using the difference between new and old

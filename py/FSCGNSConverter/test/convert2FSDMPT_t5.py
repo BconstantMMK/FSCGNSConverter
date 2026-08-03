@@ -10,7 +10,7 @@ from FSPlugins.test import testH5
 
 LOCAL = getLocal()
 
-# Testing datasets
+# Testing datasets - BE
 N = 5
 
 def fFunc(x, y, z): return 3.*np.cos(x) + 2.*np.sin(y) - np.tan(z)
