@@ -2158,12 +2158,14 @@ class FSCGNSConverter:
         if not includeSurfaceData:
             return
 
+        i = 0
         for fsCellType, np_cell2Node in self.connectivityDict.items():
             if fsCellType in self.fsCellTypesBCs:
                 nCellsOfType, nvpe = np_cell2Node.shape
                 cgnsEltNo = FSCGNSConverter.FS2CGNS_CT[fsCellType]
                 cgnsEltName = Internal.eltNo2EltName(cgnsEltNo)[0]
                 bcname, bctype = self.bcDict[self.fsMarkers[i]]
+                print(fsCellType, self.fsMarkers[i])
                 if bcname is None:
                     bcname = self.bcsNames[i].split(".")[0]
                 else:
@@ -2172,9 +2174,9 @@ class FSCGNSConverter:
                 Internal.newElements(
                     name=bcname,
                     etype=cgnsEltName,
-                    erange=[ntotElts + 1, ntotElts + nfpbc],
+                    erange=[ntotElts + 1, ntotElts + nCellsOfType],
                     econnectivity=np_cell2Node.ravel(),
-                    eboundary=nfpbc,
+                    eboundary=nCellsOfType,
                     parent=zone,
                 )
 
@@ -2182,7 +2184,7 @@ class FSCGNSConverter:
                     zone,
                     bcname,
                     bctype,
-                    elementRange=[ntotElts + 1, ntotElts + nfpbc],
+                    elementRange=[ntotElts + 1, ntotElts + nCellsOfType],
                 )
                 zoneBC = Internal.getNodeFromType(zone, "ZoneBC_t")
                 lastbcname = C.getLastBCName(bcname)
@@ -2202,7 +2204,8 @@ class FSCGNSConverter:
                         "UserDefinedData_t",
                     ]
                 )
-                ntotElts += nfpbc
+                ntotElts += nCellsOfType
+                i += 1
 
     @ProfileTime
     def RecoverFSFlowSolution(self):
