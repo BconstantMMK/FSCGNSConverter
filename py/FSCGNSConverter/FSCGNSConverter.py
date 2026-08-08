@@ -626,9 +626,9 @@ class FSCGNSConverter:
         self.nvolumeCells = 0
         self.nsurfaceCells = 0
         self.fsSurfaceCellTypes = []
+        self.fsBCCellTypes = []
         self.fsVolumeCellTypes = []
         self.fsCellTypes = []
-        self.fsCellTypesBCs = []
         self.np_coordinates = []
         self.connectivityDict = {}
         self.cell2ProcDict = {}
@@ -831,8 +831,6 @@ class FSCGNSConverter:
             for n_elt in n_eltOfType[1:]:
                 Internal._rmNode(z, n_elt)
 
-            self.fsCellTypesBCs.append(eltNo)
-
     def CreateBCZonePerSurfaceElementType(self):
         z = Internal.getZones(self.pyTree)[0]
         n_zoneBCs = Internal.getNodesFromType1(z, "ZoneBC_t")
@@ -914,74 +912,59 @@ class FSCGNSConverter:
         n_octreeFaces = Internal.getNodesFromName(
             self.pyTree, "NonConformalFaces"
         )
+        if not n_octreeFaces:
+            return None
 
-        if n_octreeFaces:
-            octreeFaces_EC_global = Internal.getNodeFromName(
-                n_octreeFaces, "ElementConnectivity"
-            )[1]
-            lenNCF = len(octreeFaces_EC_global) // 4
+        octreeFaces_EC_global = Internal.getNodeFromName(
+            n_octreeFaces, "ElementConnectivity"
+        )[1]
+        lenNCF = len(octreeFaces_EC_global) // 4
 
-            n_NCF = Internal.getNodesFromName(self.pyTree, "NonConformalFaces")
-            for i in n_NCF:
-                Internal._rmNode(self.pyTree, i)
+        n_NCF = Internal.getNodesFromName(self.pyTree, "NonConformalFaces")
+        for n in n_NCF:
+            Internal._rmNode(self.pyTree, n)
 
-            idx = numpy.unique(octreeFaces_EC_global, return_index=True)[1]
-            octreeFaces_idx_nodes = (
-                octreeFaces_EC_global[numpy.sort(idx)] - 1
-            )  # indices loc2glob
-            len_nodes_NCF = len(octreeFaces_idx_nodes)
-            if len_nodes_NCF > 0:
-                xCoord_nodes_NCF = xCoord[octreeFaces_idx_nodes]
-                yCoord_nodes_NCF = yCoord[octreeFaces_idx_nodes]
-                zCoord_nodes_NCF = zCoord[octreeFaces_idx_nodes]
+        idx = numpy.unique(octreeFaces_EC_global, return_index=True)[1]
+        octreeFaces_idx_nodes = (
+            octreeFaces_EC_global[numpy.sort(idx)] - 1
+        )  # indices loc2glob
+        len_nodes_NCF = len(octreeFaces_idx_nodes)
+        if len_nodes_NCF > 0:
+            xCoord_nodes_NCF = xCoord[octreeFaces_idx_nodes]
+            yCoord_nodes_NCF = yCoord[octreeFaces_idx_nodes]
+            zCoord_nodes_NCF = zCoord[octreeFaces_idx_nodes]
 
-                global_ncFaces = numpy.reshape(
-                    octreeFaces_EC_global - 1, (lenNCF, 4)
-                )
-                indices1 = numpy.linspace(
-                    0, len_nodes_NCF - 1, len_nodes_NCF, dtype=Internal.E_NpyInt
-                )
-                glob2loc = numpy.zeros(self.nvertices, dtype=Internal.E_NpyInt)
-                glob2loc[octreeFaces_idx_nodes] = indices1
-                locNCFaces = glob2loc[global_ncFaces]
+            global_ncFaces = numpy.reshape(
+                octreeFaces_EC_global - 1, (lenNCF, 4)
+            )
+            indices1 = numpy.arange(len_nodes_NCF, dtype=Internal.E_NpyInt)
+            glob2loc = numpy.zeros(self.nvertices, dtype=Internal.E_NpyInt)
+            glob2loc[octreeFaces_idx_nodes] = indices1
+            locNCFaces = glob2loc[global_ncFaces]
 
-                z_octreeFaces = Internal.newZone(
-                    name="NonConformalFaces",
-                    zsize=[[len(xCoord_nodes_NCF), len(octreeFaces_idx_nodes)]],
-                    ztype="Unstructured",
-                )
-                n_gc = Internal.newGridCoordinates(parent=z_octreeFaces)
-                Internal.newDataArray(
-                    "CoordinateX", value=xCoord_nodes_NCF, parent=n_gc
-                )
-                Internal.newDataArray(
-                    "CoordinateY", value=yCoord_nodes_NCF, parent=n_gc
-                )
-                Internal.newDataArray(
-                    "CoordinateZ", value=zCoord_nodes_NCF, parent=n_gc
-                )
-                Internal.newElements(
-                    name="NonconformalFaces",
-                    etype=7,
-                    econnectivity=numpy.ravel(locNCFaces + 1),
-                    erange=[1, lenNCF],
-                    eboundary=0,
-                    parent=z_octreeFaces,
-                )
-            else:
-                z_octreeFaces = None
-                # Internal.newZone(
-                #     name="NonConformalFaces",
-                #     zsize=[[0,0]],
-                #     ztype="Unstructured"
-                # )
-        else:
-            z_octreeFaces = None
-            # Internal.newZone(
-            #     name="NonConformalFaces",
-            #     zsize=[[0,0]],
-            #     ztype="Unstructured"
-            # )
+            z_octreeFaces = Internal.newZone(
+                name="NonConformalFaces",
+                zsize=[[len(xCoord_nodes_NCF), len(octreeFaces_idx_nodes)]],
+                ztype="Unstructured",
+            )
+            n_gc = Internal.newGridCoordinates(parent=z_octreeFaces)
+            Internal.newDataArray(
+                "CoordinateX", value=xCoord_nodes_NCF, parent=n_gc
+            )
+            Internal.newDataArray(
+                "CoordinateY", value=yCoord_nodes_NCF, parent=n_gc
+            )
+            Internal.newDataArray(
+                "CoordinateZ", value=zCoord_nodes_NCF, parent=n_gc
+            )
+            Internal.newElements(
+                name="NonconformalFaces",
+                etype=7,
+                econnectivity=numpy.ravel(locNCFaces + 1),
+                erange=[1, lenNCF],
+                eboundary=0,
+                parent=z_octreeFaces,
+            )
         return z_octreeFaces
 
     @ProfileTime
@@ -1011,9 +994,7 @@ class FSCGNSConverter:
         bcTypes = []
         bcs = []
         for n_bc in n_bcs:
-            if not any(
-                suffix in n_bc[0] for suffix in [".TRI", ".QUAD"]
-            ):
+            if not any(suffix in n_bc[0] for suffix in [".TRI", ".QUAD"]):
                 bcName = n_bc[0].replace(".", "")
             else:
                 bcName = n_bc[0].split(".")[0]
@@ -1532,9 +1513,9 @@ class FSCGNSConverter:
         ibmBCCoordsY = {}
         ibmBCCoordsZ = {}
         ibmBCNames = []
-        BC_wall_coords_x = []
-        BC_wall_coords_y = []
-        BC_wall_coords_z = []
+        bcWallCoordsX = []
+        bcWallCoordsY = []
+        bcWallCoordsZ = []
         BC_wall_names = []
         self.bcEltsDict = {"TRI": [], "QUAD": []}
 
@@ -1549,7 +1530,7 @@ class FSCGNSConverter:
 
         # Loop on BCs
         for bc_node in pytree_bc_nodes:
-            bc_name = bc_node[0]
+            bcName = bc_node[0]
             # Get list of BC points: based on name to make the difference
             # between point list and point range
             bc_bMarker = None
@@ -1590,10 +1571,10 @@ class FSCGNSConverter:
 
             # Fill boundary dicts
             if bc_bMarker is None: continue
-            self.bMarker2BCNameDict[bc_bMarker] = bc_name
+            self.bMarker2BCNameDict[bc_bMarker] = bcName
             self.bMarker2FacePLDict[bc_bMarker] = point_list
 
-            bcNameSplit = bc_name.split(".")
+            bcNameSplit = bcName.split(".")
             if len(bcNameSplit) > 1:
                 if bcNameSplit[1].startswith("TRI"):
                     self.bcEltsDict["TRI"].append(bc_bMarker)
@@ -1609,20 +1590,20 @@ class FSCGNSConverter:
                 )
                 for data_node in bc_data_nodes:
                     fs_bc_dataset_name = data_node[0]
-                    if self.IBM and bc_name.startswith("IBMWall"):
-                        if bc_name not in ibmBCCoordsX:
-                            ibmBCCoordsX[bc_name] = []
-                            ibmBCCoordsY[bc_name] = []
-                            ibmBCCoordsZ[bc_name] = []
+                    if self.IBM and bcName.startswith("IBMWall"):
+                        if bcName not in ibmBCCoordsX:
+                            ibmBCCoordsX[bcName] = []
+                            ibmBCCoordsY[bcName] = []
+                            ibmBCCoordsZ[bcName] = []
                         ibmBCNames.append(fs_bc_dataset_name)
                         if self.flipYZAxes:
-                            ibmBCCoordsX[bc_name].append(data_node[2][0][1])
-                            ibmBCCoordsY[bc_name].append(data_node[2][2][1])
-                            ibmBCCoordsZ[bc_name].append(-data_node[2][1][1])
+                            ibmBCCoordsX[bcName].append(data_node[2][0][1])
+                            ibmBCCoordsY[bcName].append(data_node[2][2][1])
+                            ibmBCCoordsZ[bcName].append(-data_node[2][1][1])
                         else:
-                            ibmBCCoordsX[bc_name].append(data_node[2][0][1])
-                            ibmBCCoordsY[bc_name].append(data_node[2][1][1])
-                            ibmBCCoordsZ[bc_name].append(data_node[2][2][1])
+                            ibmBCCoordsX[bcName].append(data_node[2][0][1])
+                            ibmBCCoordsY[bcName].append(data_node[2][1][1])
+                            ibmBCCoordsZ[bcName].append(data_node[2][2][1])
 
                     elif (
                         self.IBM
@@ -1631,31 +1612,26 @@ class FSCGNSConverter:
                     ):
                         BC_wall_names.append(fs_bc_dataset_name)
                         if self.flipYZAxes:
-                            BC_wall_coords_x.append(data_node[2][0][1])
-                            BC_wall_coords_y.append(data_node[2][2][1])
-                            BC_wall_coords_z.append(-data_node[2][1][1])
+                            bcWallCoordsX.append(data_node[2][0][1])
+                            bcWallCoordsY.append(data_node[2][2][1])
+                            bcWallCoordsZ.append(-data_node[2][1][1])
                         else:
-                            BC_wall_coords_x.append(data_node[2][0][1])
-                            BC_wall_coords_y.append(data_node[2][1][1])
-                            BC_wall_coords_z.append(data_node[2][2][1])
+                            bcWallCoordsX.append(data_node[2][0][1])
+                            bcWallCoordsY.append(data_node[2][1][1])
+                            bcWallCoordsZ.append(data_node[2][2][1])
 
         if self.IBM:
             if self.ibmParameters["IBM type"]["type"] == "global":
-                return [
-                    ibmBCNames,
-                    ibmBCCoordsX,
-                    ibmBCCoordsY,
-                    ibmBCCoordsZ,
-                ]
-            return [  # formulation 'locale'
+                return [ibmBCNames, ibmBCCoordsX, ibmBCCoordsY, ibmBCCoordsZ]
+            return [  # 'local' formulation
                 ibmBCNames,
                 ibmBCCoordsX,
                 ibmBCCoordsY,
                 ibmBCCoordsZ,
                 BC_wall_names,
-                BC_wall_coords_x,
-                BC_wall_coords_y,
-                BC_wall_coords_z,
+                bcWallCoordsX,
+                bcWallCoordsY,
+                bcWallCoordsZ,
             ]
         return None
 
@@ -2121,14 +2097,14 @@ class FSCGNSConverter:
                     # always set bcname in self.bcDict
                     self.bcDict[marker][0] = fsbcname
 
-                    indices_vector = numpy.ravel(
+                    indicesVector = numpy.ravel(
                         numpy.argwhere(np_bMarkerCellType == marker)
                     )
-                    if len(indices_vector) > 0:
+                    if len(indicesVector) > 0:
                         self.bcsNames.append(fsbcname)
-                        self.indicesPerBdr.append(indices_vector + offset)
-                        self.connectivityDict[cellType] = np_cell2Node[indices_vector]
-                        self.fsCellTypesBCs.append(cellType)
+                        self.indicesPerBdr.append(indicesVector + offset)
+                        self.connectivityDict[cellType] = np_cell2Node[indicesVector]
+                        self.fsBCCellTypes.append(cellType)
                         self.fsMarkers.append(marker)
                     offset = nownedCells
 
@@ -2140,72 +2116,69 @@ class FSCGNSConverter:
         ntotElts = 0
         zone = Internal.getZones(self.pyTree)[0]
 
-        for fsCellType, np_cell2Node in self.connectivityDict.items():
-            if fsCellType in self.fsVolumeCellTypes:
-                nCellsOfType, nvpe = np_cell2Node.shape
-                cgnsEltNo = FSCGNSConverter.FS2CGNS_CT[fsCellType]
-                cgnsEltName = Internal.eltNo2EltName(cgnsEltNo)[0]
-                Internal.newElements(
-                    name="GridElements_" + cgnsEltName,
-                    etype=cgnsEltName,
-                    econnectivity=np_cell2Node.ravel(),
-                    erange=[ntotElts + 1, ntotElts + nCellsOfType],
-                    eboundary=0,
-                    parent=zone,
-                )
-                ntotElts += nCellsOfType
+        for fsCellType in self.fsVolumeCellTypes:
+            np_cell2Node = self.connectivityDict[fsCellType]
+            nCellsOfType, nvpe = np_cell2Node.shape
+            cgnsEltNo = FSCGNSConverter.FS2CGNS_CT[fsCellType]
+            cgnsEltName = Internal.eltNo2EltName(cgnsEltNo)[0]
+            Internal.newElements(
+                name="GridElements_" + cgnsEltName,
+                etype=cgnsEltName,
+                econnectivity=np_cell2Node.ravel(),
+                erange=[ntotElts + 1, ntotElts + nCellsOfType],
+                eboundary=0,
+                parent=zone
+            )
+            ntotElts += nCellsOfType
 
         if not includeSurfaceData:
             return
 
-        i = 0
-        for fsCellType, np_cell2Node in self.connectivityDict.items():
-            if fsCellType in self.fsCellTypesBCs:
-                nCellsOfType, nvpe = np_cell2Node.shape
-                cgnsEltNo = FSCGNSConverter.FS2CGNS_CT[fsCellType]
-                cgnsEltName = Internal.eltNo2EltName(cgnsEltNo)[0]
-                bcname, bctype = self.bcDict[self.fsMarkers[i]]
-                print(fsCellType, self.fsMarkers[i])
-                if bcname is None:
-                    bcname = self.bcsNames[i].split(".")[0]
-                else:
-                    bcname = bcname.split(".")[0]
-                bcname = f"{bcname}.{cgnsEltName}_{int(self.fsMarkers[i])}"
-                Internal.newElements(
-                    name=bcname,
-                    etype=cgnsEltName,
-                    erange=[ntotElts + 1, ntotElts + nCellsOfType],
-                    econnectivity=np_cell2Node.ravel(),
-                    eboundary=nCellsOfType,
-                    parent=zone,
-                )
+        for i, fsCellType in enumerate(self.fsBCCellTypes):
+            np_cell2Node = self.connectivityDict[fsCellType]
+            nCellsOfType, nvpe = np_cell2Node.shape
+            cgnsEltNo = FSCGNSConverter.FS2CGNS_CT[fsCellType]
+            cgnsEltName = Internal.eltNo2EltName(cgnsEltNo)[0]
+            bcName, bcType = self.bcDict[self.fsMarkers[i]]
+            if bcName is None:
+                bcName = self.bcsNames[i].split(".")[0]
+            else:
+                bcName = bcName.split(".")[0]
+            bcName = f"{bcName}.{cgnsEltName}_{int(self.fsMarkers[i])}"
+            Internal.newElements(
+                name=bcName,
+                etype=cgnsEltName,
+                erange=[ntotElts + 1, ntotElts + nCellsOfType],
+                econnectivity=np_cell2Node.ravel(),
+                eboundary=nCellsOfType,
+                parent=zone
+            )
 
-                C._addBC2Zone(
-                    zone,
-                    bcname,
-                    bctype,
-                    elementRange=[ntotElts + 1, ntotElts + nCellsOfType],
-                )
-                zoneBC = Internal.getNodeFromType(zone, "ZoneBC_t")
-                lastbcname = C.getLastBCName(bcname)
-                node_bc = Internal.getNodeFromName(zoneBC, lastbcname)
-                node_bc[0] = bcname
-                boundaryStateDataset = Internal.createNode(
-                    "BCDataSet", "BCDataSet_t", parent=node_bc, value="Null"
-                )
-                boundaryState = Internal.createNode(
-                    "Boundary", "BCData_t", parent=boundaryStateDataset
-                )
-                boundaryState[2].append(
-                    [
-                        "BoundaryMarker",
-                        int(self.fsMarkers[i]),
-                        [],
-                        "UserDefinedData_t",
-                    ]
-                )
-                ntotElts += nCellsOfType
-                i += 1
+            C._addBC2Zone(
+                zone,
+                bcName,
+                bcType,
+                elementRange=[ntotElts + 1, ntotElts + nCellsOfType],
+            )
+            zoneBC = Internal.getNodeFromType(zone, "ZoneBC_t")
+            lastBCName = C.getLastBCName(bcName)
+            n_bc = Internal.getNodeFromName(zoneBC, lastBCName)
+            n_bc[0] = bcName
+            boundaryStateDataset = Internal.createNode(
+                "BCDataSet", "BCDataSet_t", parent=n_bc, value="Null"
+            )
+            boundaryState = Internal.createNode(
+                "Boundary", "BCData_t", parent=boundaryStateDataset
+            )
+            boundaryState[2].append(
+                [
+                    "BoundaryMarker",
+                    int(self.fsMarkers[i]),
+                    [],
+                    "UserDefinedData_t",
+                ]
+            )
+            ntotElts += nCellsOfType
 
     @ProfileTime
     def RecoverFSFlowSolution(self):
@@ -2815,12 +2788,10 @@ class FSCGNSConverter:
         """Delete class attributes that are no longer needed"""
         del (
             self.fsmesh,
-            self.fsMarkers,
             self.np_coordinates,
             self.connectivityDict,
-            self.indicesPerBdr,
-            self.bMarker2BCNameDict,
-            self.bMarker2FacePLDict,
+            #self.indicesPerBdr,
+            #self.bMarker2FacePLDict,
         )
 
     @ProfileTime
