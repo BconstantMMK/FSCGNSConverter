@@ -39,6 +39,8 @@ __all__ = [
     "ENABLE_PROFILING",
     "BuildMeshOps",
     "buildMeshOps",
+    "GenerateBCDictFromFSMesh",
+    "generateBCDictFromFSMesh"
 ]
 
 
@@ -494,7 +496,22 @@ def BuildMeshOps(
     return tuple(meshOps)
 
 
-buildMeshOps = BuildMeshOps  # Alias
+def GenerateBCDictFromFSMesh(fsmesh=None):
+    """Fetch boundary names from an fsmesh and return a partial bcDict."""
+    bcDictPartial = {}
+    if fsmesh is None:
+        return bcDictPartial
+    markers = FSIntArray()
+    fsmesh.GatherCellAttributeValues(FS_AT_CADGroupID, markers) or FSError.PrintAndExit()
+    for marker in markers:
+        bcName = str(fsmesh.GetCellAttributeValueName(FS_AT_CADGroupID, marker))
+        bcDictPartial[marker] = bcName
+    return bcDictPartial
+
+
+# Aliases
+buildMeshOps = BuildMeshOps
+generateBCDictFromFSMesh = GenerateBCDictFromFSMesh
 
 
 # ---------------------------------------------------------------------------- #
@@ -570,26 +587,8 @@ class FSCGNSConverter:
         self.ibmParameters = (
             {} if IBMParameters is None else IBMParameters.copy()
         )
-        self.IBM = len(self.ibmParameters) > 0
-        if bcDict is None or not isinstance(bcDict, dict):
-            self.bcDict = {}
-        else:
-            self.bcDict = {int(k): v for k, v in bcDict.items()}
-            for marker in self.bcDict:
-                if isinstance(self.bcDict[marker], tuple):
-                    self.bcDict[marker] = list(self.bcDict[marker])
-                elif isinstance(self.bcDict[marker], str):
-                    self.bcDict[marker] = [None, self.bcDict[marker]]
-                lenD = len(self.bcDict[marker])
-                if lenD == 1:
-                    self.bcDict[marker].insert(0, None)
-                elif lenD == 0 or lenD > 2:
-                    raise ValueError(
-                        "Invalid bcDict argument. Dictionary values can either "
-                        "be a BCType (str) or a list containing "
-                        "(BCName, BCType). When a BCName is provided, it "
-                        "overrides the name present in the input file."
-                    )
+        self.ibm = len(self.ibmParameters) > 0
+        self.bcDict = bcDict
         self.coordsName = coordsName
         self.verbose = verbose
 
@@ -626,23 +625,68 @@ class FSCGNSConverter:
         self.nvolumeCells = 0
         self.nsurfaceCells = 0
         self.fsSurfaceCellTypes = []
-        self.fsBCCellTypes = []
         self.fsVolumeCellTypes = []
-        self.fsCellTypes = []
-        self.np_coordinates = []
+        self.np_coordinates = None
         self.connectivityDict = {}
         self.cell2ProcDict = {}
-        self.indicesPerBdr = []
         self.bcsNames = []
-        self.fsMarkers = []
-        self.bMarker2BCNameDict = {}
-        self.bMarker2FacePLDict = {}
         self.bcEltsDict = {}
         self.eltRangeMap = {}
+
+    def InitBCDict(self):
+        """Check user bcDict and combine with that obtained from the fsmesh"""
+        errorMessage = (
+            "Invalid bcDict argument. Dictionary values can "
+            "either be a BCType (str) or a list containing "
+            "(BCName, BCType). When a BCName is provided, it "
+            "overrides the name present in the input file."
+        )
+
+        bcDictTmp = GenerateBCDictFromFSMesh(self.fsmesh)
+
+        if self.bcDict is None or not isinstance(self.bcDict, dict):
+            self.bcDict = {}
+        else:
+            self.bcDict = {int(k): v for k, v in self.bcDict.items()}
+            for marker in self.bcDict:
+                if isinstance(self.bcDict[marker], (tuple, list)):
+                    if len(self.bcDict[marker]) == 1:
+                        self.bcDict[marker] = {
+                            "name": None,
+                            "type": self.bcDict[marker][0]
+                        }
+                    elif len(self.bcDict[marker]) == 2:
+                        self.bcDict[marker] = {
+                            "name": self.bcDict[marker][0],
+                            "type": self.bcDict[marker][1]
+                        }
+                    else:
+                        raise ValueError(errorMessage)
+                elif isinstance(self.bcDict[marker], str):
+                    self.bcDict[marker] = {
+                        "name": None,
+                        "type": self.bcDict[marker]
+                    }
+                else:
+                    raise ValueError(errorMessage)
+
+        for marker, bcName in bcDictTmp.items():
+            if marker not in self.bcDict:
+                if "symmetry" in bcName.lower():
+                    bcType = "BCSymmetryPlane"
+                else:
+                    bcType = "UserDefined"
+                self.bcDict[marker] = {"name": bcName, "type": bcType}
+            elif self.bcDict[marker]["name"] is None:
+                self.bcDict[marker]["name"] = bcName
 
     def Convert(self, **kwargs):
         """Main routine to convert a mesh from FS to CGNS or vice versa"""
         self.__Convert(**kwargs)
+        # print("self.meshType", self.meshType, flush=True)
+        # print("self.fsVolumeCellTypes", self.fsVolumeCellTypes, flush=True)
+        # print("self.fsSurfaceCellTypes", self.fsSurfaceCellTypes, flush=True)
+        # print("self.bcDict", self.bcDict, flush=True)
 
     def Convert2CGNS(self, forOverset=False, forFFDX=False, **kwargs):
         """Convert a mesh from FS to CGNS"""
@@ -654,6 +698,8 @@ class FSCGNSConverter:
             includeSurfaceData = True
             includeGhostCells = False
         self.RecoverFSMeshInfo(includeGhostCells=includeGhostCells)
+        self.InitBCDict()
+        
         self.RecoverFSCoordinates()
         self.InitCGNSCoordinates()
         self.RecoverFSConnectivity(
@@ -689,10 +735,11 @@ class FSCGNSConverter:
         ibmDatasets = None
 
         self.RecoverCGNSMeshInfo()
+        self.InitBCDict()
 
         if self.nvertices > 0:
-            self.PrepareDatasetOfNonConformalFaces()
-            z_ncFaces = self.CreateZoneOfNonConformalFaces()
+            self.PrepareNCFacesDataset()
+            z_ncFaces = self.CreateNCFacesZone()
             self.PrepareCGNSConnectivities()
             self.RecoverCGNSCoordinates()
             self.RecoverCGNSConnectivity()
@@ -727,7 +774,6 @@ class FSCGNSConverter:
         self.nvolumeCells = 0
         self.fsVolumeCellTypes = []
         self.fsSurfaceCellTypes = []
-        self.fsCellTypes = []
 
         # Get number of vertices
         self.nvertices = self.fsmesh.GetNOwnedCells(FSMeshEnums.CT_Node)
@@ -749,8 +795,6 @@ class FSCGNSConverter:
                     self.nvolumeCells += self.fsmesh.GetNCells(cellType)
                 else:
                     self.nvolumeCells += self.fsmesh.GetNOwnedCells(cellType)
-
-        self.fsCellTypes = self.fsVolumeCellTypes + self.fsSurfaceCellTypes
 
     def SetNumpyCoordinates(self, coords):
         if self.flipYZAxes:
@@ -792,8 +836,7 @@ class FSCGNSConverter:
             eltName = n_elt[0]
             eltNo = Internal.getValue(n_elt)[0]
             if eltNo in cgnsSurfCellNos and eltName != "NonConformalFaces":
-                eltType2ElementNodesDict.setdefault(eltNo, [])
-                eltType2ElementNodesDict[eltNo].append(n_elt)
+                eltType2ElementNodesDict.setdefault(eltNo, []).append(n_elt)
 
         ntotFaces = 0
         for eltNo, n_eltOfType in eltType2ElementNodesDict.items():
@@ -838,10 +881,10 @@ class FSCGNSConverter:
             return None  # No BCs defined
 
         n_bcs = Internal.getNodesFromType1(n_zoneBCs, "BC_t")
-        if len(self.bcsNames) != len(n_bcs):
+        if len(self.bcDict) != len(n_bcs):
             print(
                 f"WARNING: Number of BCs in CGNS mesh, {len(n_bcs)}, does not "
-                f"match the number of BCs in bcsNames, {len(self.bcsNames)}."
+                f"match the number of BCs in bcsNames, {len(self.bcDict)}."
             )
 
         # Loop over all existing conformal BC nodes (IndexArray or IndexRange)
@@ -871,7 +914,7 @@ class FSCGNSConverter:
                 np_eltRange[1] = offset + nfaces
                 ntotBCVertices += nfaces
 
-    def PrepareDatasetOfNonConformalFaces(self):
+    def PrepareNCFacesDataset(self):
         if self.conformal:
             return
         bcNames = [
@@ -895,14 +938,14 @@ class FSCGNSConverter:
                     ERmin, ERmax = eltRange[0], eltRange[1]
                 else:
                     raise ValueError(
-                        "PrepareDatasetOfNonConformalFaces: Problem with the "
+                        "PrepareNCFacesDataset: Problem with the "
                         "element range of non-conformal interfaces."
                     )
                 lenNCF = ERmax - ERmin + 1
                 self.nsurfaceCells -= lenNCF
 
     @ProfileTime
-    def CreateZoneOfNonConformalFaces(self):
+    def CreateNCFacesZone(self):
         if self.conformal:
             return None
         z_octreeFaces = None
@@ -1053,10 +1096,10 @@ class FSCGNSConverter:
             n_zoneBCs = Internal.getNodesFromType1(z, "ZoneBC_t")
             n_bcs = Internal.getNodesFromType1(n_zoneBCs, "BC_t")
             for n_bc in n_bcs:
-                if not any(suffix in n_bc[0] for suffix in [".TRI", ".QUAD"]):
-                    self.bcsNames.append(n_bc[0].replace(".", ""))
-                else:
+                if any(suffix in n_bc[0] for suffix in [".TRI", ".QUAD"]):
                     self.bcsNames.append(n_bc[0].split(".")[0])
+                else:
+                    self.bcsNames.append(n_bc[0].replace(".", ""))
 
             self.MergeUnstructSurfaceConnectivities()
             self.CreateBCZonePerSurfaceElementType()
@@ -1089,7 +1132,6 @@ class FSCGNSConverter:
         self.nvolumeCells = 0
         self.fsVolumeCellTypes = []
         self.fsSurfaceCellTypes = []
-        self.fsCellTypes = []
 
         # Reorder element types as in FSDM
         self.ReorderCells()
@@ -1133,8 +1175,6 @@ class FSCGNSConverter:
                 if self.nvolumeCells > 0:
                     self.fsVolumeCellTypes.append(FSMeshEnums.CT_Hexa8)
                     self.fsSurfaceCellTypes.append(FSMeshEnums.CT_Quad4)
-
-            self.fsCellTypes = self.fsVolumeCellTypes + self.fsSurfaceCellTypes
 
     @ProfileTime
     def RecoverCGNSCoordinates(self):
@@ -1420,7 +1460,7 @@ class FSCGNSConverter:
                 self.InitFSConnectivity(fsCellType)
         else:
             self.fsmesh.InitUnstructNodes(self.nvertices)
-            for fsCellType in self.fsCellTypes:
+            for fsCellType in self.fsVolumeCellTypes + self.fsSurfaceCellTypes:
                 self.InitFSConnectivity(fsCellType)
 
         if not self.conformal:
@@ -1446,7 +1486,7 @@ class FSCGNSConverter:
 
     @ProfileTime
     def InitIBMDatasets(self):
-        if not self.IBM:
+        if not self.ibm:
             return
         # Flis wall distance initialization
         spatial_discretization = self.ibmParameters["spatial discretization"][
@@ -1525,7 +1565,7 @@ class FSCGNSConverter:
         pytree_bc_nodes = Internal.getNodesFromType(n_zoneBC, "BC_t")
         current_automatic_marker = 1
         
-        if self.IBM and self.ibmParameters["IBM type"]["type"] == "local":
+        if self.ibm and self.ibmParameters["IBM type"]["type"] == "local":
             wall_bMarkers = self.ibmParameters["IBM type"]["wall boundary markers"]
 
         # Loop on BCs
@@ -1571,8 +1611,7 @@ class FSCGNSConverter:
 
             # Fill boundary dicts
             if bc_bMarker is None: continue
-            self.bMarker2BCNameDict[bc_bMarker] = bcName
-            self.bMarker2FacePLDict[bc_bMarker] = point_list
+            self.bcDict[bc_bMarker] = {"name": bcName, "facePL": point_list}
 
             bcNameSplit = bcName.split(".")
             if len(bcNameSplit) > 1:
@@ -1590,7 +1629,7 @@ class FSCGNSConverter:
                 )
                 for data_node in bc_data_nodes:
                     fs_bc_dataset_name = data_node[0]
-                    if self.IBM and bcName.startswith("IBMWall"):
+                    if self.ibm and bcName.startswith("IBMWall"):
                         if bcName not in ibmBCCoordsX:
                             ibmBCCoordsX[bcName] = []
                             ibmBCCoordsY[bcName] = []
@@ -1606,7 +1645,7 @@ class FSCGNSConverter:
                             ibmBCCoordsZ[bcName].append(data_node[2][2][1])
 
                     elif (
-                        self.IBM
+                        self.ibm
                         and self.ibmParameters["IBM type"]["type"] == "local"
                         and bc_bMarker in wall_bMarkers
                     ):
@@ -1620,7 +1659,7 @@ class FSCGNSConverter:
                             bcWallCoordsY.append(data_node[2][1][1])
                             bcWallCoordsZ.append(data_node[2][2][1])
 
-        if self.IBM:
+        if self.ibm:
             if self.ibmParameters["IBM type"]["type"] == "global":
                 return [ibmBCNames, ibmBCCoordsX, ibmBCCoordsY, ibmBCCoordsZ]
             return [  # 'local' formulation
@@ -1642,7 +1681,8 @@ class FSCGNSConverter:
         np_markerArray = numpy.zeros(
             self.nsurfaceCells, dtype=Internal.E_NpyInt
         )
-        for marker, np_facePL in self.bMarker2FacePLDict.items():
+        for marker in self.bcDict:
+            np_facePL = self.bcDict[marker]["facePL"]
             np_markerArray[np_facePL - self.nvolumeCells] = marker
 
         offset = 0
@@ -1682,18 +1722,17 @@ class FSCGNSConverter:
         # Then we attach our boundary marker to their name in the fsmesh
         ibmBMarkers = []
         ibmNames = []
-        for marker in self.bMarker2BCNameDict:
+        for marker in self.bcDict:
+            bcName = self.bcDict[marker]["name"]
             self.fsmesh.SetCellAttributeValueName(
-                FS_AT_CADGroupID, marker, self.bMarker2BCNameDict[marker]
+                FS_AT_CADGroupID, marker, bcName
             )
-            if self.IBM and self.bMarker2BCNameDict[marker].startswith(
-                "IBMWall"
-            ):
+            if self.ibm and bcName.startswith("IBMWall"):
                 ibmBMarkers.append(marker)
-                ibmNames.append(self.bMarker2BCNameDict[marker])
+                ibmNames.append(bcName)
 
         if (
-            self.IBM
+            self.ibm
             and isinstance(ibmDatasets, list)
             and len(ibmDatasets) >= 4
             and ibmNames
@@ -1707,7 +1746,7 @@ class FSCGNSConverter:
                 ibmDataset1.append(ibmDatasets[1][ibmName])
                 ibmDataset2.append(ibmDatasets[2][ibmName])
                 ibmDataset3.append(ibmDatasets[3][ibmName])
-                pointListIBC.append(self.bMarker2FacePLDict[ibmBMarker])
+                pointListIBC.append(self.bcDict[ibmBMarker]["facePL"])
             ibmDataset1 = numpy.concatenate(ibmDataset1, axis=1)
             ibmDataset2 = numpy.concatenate(ibmDataset2, axis=1)
             ibmDataset3 = numpy.concatenate(ibmDataset3, axis=1)
@@ -1738,7 +1777,7 @@ class FSCGNSConverter:
                     ibmDatasets[7],
                     ibmDatasets[4],
                     self.nsurfaceCells,
-                    self.bMarker2FacePLDict[wall_bMarkers[0]]
+                    self.bcDict[wall_bMarkers[0]]["facePL"]
                     - self.nvolumeCells,
                 )
 
@@ -1747,7 +1786,8 @@ class FSCGNSConverter:
         np_markerArray = numpy.zeros(
             self.nsurfaceCells, dtype=Internal.E_NpyInt
         )
-        values = list(self.bMarker2BCNameDict.values())
+        keys = list(self.bcDict.keys())
+        values = [x["name"] for x in self.bcDict.values()]
         gath_values = Cmpi.allgather(values)
 
         bc_names_all = sorted(
@@ -1758,12 +1798,10 @@ class FSCGNSConverter:
         bMarker2BCName2 = {}
         bMarker2PL2 = {}
         for marker, name in zip(bc_markers_all, bc_names_all):
-            if name in self.bMarker2BCNameDict.values():
-                idx = list(self.bMarker2BCNameDict.keys())[
-                    list(self.bMarker2BCNameDict.values()).index(name)
-                ]
-                bMarker2BCName2[marker] = self.bMarker2BCNameDict[idx]
-                bMarker2PL2[marker] = self.bMarker2FacePLDict[idx]
+            if name in values:
+                idx = keys[values.index(name)]
+                bMarker2BCName2[marker] = self.bcDict[idx]["name"]
+                bMarker2PL2[marker] = self.bcDict[idx]["facePL"]
 
         for marker in bMarker2BCName2:
             point_list = bMarker2PL2[marker] - self.nvolumeCells
@@ -1796,7 +1834,7 @@ class FSCGNSConverter:
         # for marker in bMarker2BCName2.keys():
         ibmBMarkers = []
         ibmNames = []
-        if self.IBM:
+        if self.ibm:
             fsdatanames = ["WallPointCoordinates", "DonorPointCoordinates"]
             fs_surfaceCellTypes = FSIntArray(len(self.fsSurfaceCellTypes))
             if self.fsSurfaceCellTypes:
@@ -1812,15 +1850,15 @@ class FSCGNSConverter:
                 FS_AT_CADGroupID, marker, name
             )
             if (
-                self.IBM
-                and marker in self.bMarker2BCNameDict
-                and self.bMarker2BCNameDict[marker].startswith("IBMWall")
+                self.ibm
+                and marker in self.bcDict
+                and self.bcDict[marker]["name"].startswith("IBMWall")
             ):
                 ibmBMarkers.append(marker)
-                ibmNames.append(self.bMarker2BCNameDict[marker])
+                ibmNames.append(self.bcDict[marker]["name"])
 
         if (
-            self.IBM
+            self.ibm
             and isinstance(ibmDatasets, list)
             and len(ibmDatasets) >= 4
             and ibmNames
@@ -1834,7 +1872,7 @@ class FSCGNSConverter:
                 ibmDataset1.append(ibmDatasets[1][ibmName])
                 ibmDataset2.append(ibmDatasets[2][ibmName])
                 ibmDataset3.append(ibmDatasets[3][ibmName])
-                pointListIBC.append(self.bMarker2FacePLDict[ibmBMarker])
+                pointListIBC.append(self.bcDict[ibmBMarker]["facePL"])
             ibmDataset1 = numpy.concatenate(ibmDataset1, axis=1)
             ibmDataset2 = numpy.concatenate(ibmDataset2, axis=1)
             ibmDataset3 = numpy.concatenate(ibmDataset3, axis=1)
@@ -1988,125 +2026,84 @@ class FSCGNSConverter:
         for cellType in self.fsVolumeCellTypes:
             nownedCells = self.fsmesh.GetNOwnedCells(cellType)
             fs_cell2Node = self.fsmesh.GetCell2Node(cellType)
-            np_cell2Node = 1 + numpy.array(
-                fs_cell2Node.Buffer(), dtype=Internal.E_NpyInt, copy=True
+            np_cell2Node = numpy.array(
+                fs_cell2Node.Buffer(),
+                dtype=Internal.E_NpyInt,
+                copy=False
             )
             if not includeGhostCells:
-                np_cell2Node = np_cell2Node[:nownedCells,:]
-            self.connectivityDict[cellType] = np_cell2Node
+                np_cell2Node = np_cell2Node[:nownedCells]
+            self.connectivityDict[cellType] = {
+                "nCells": nownedCells,
+                "ElementConnectivity": np_cell2Node
+            }
 
         if includeSurfaceData:
-            # Get marker list
-            fs_bMarkerList = self.fsmesh.GetCellAttributeValuesWithNames(
+            # Get list of BC marker ids
+            fs_bMarkers = self.fsmesh.GetCellAttributeValuesWithNames(
                 "CADGroupID"
             )
             try:
-                np_bMarkerList = numpy.array(fs_bMarkerList.Buffer(), copy=True)
+                np_bMarkers = numpy.array(fs_bMarkers.Buffer(), copy=False)
             except BufferError:
-                np_bMarkerList = []
-            uniqueMarkers = {}
-            sharedMarkers = set()
+                np_bMarkers = []
+            # print("np_bMarkers", np_bMarkers)
+
+            cellType2BMarkersDict = {}
             for cellType in self.fsSurfaceCellTypes:
+                # Fill connectivityDict
                 nownedCells = self.fsmesh.GetNOwnedCells(cellType)
+                fs_cell2Node = self.fsmesh.GetCell2Node(cellType)
+                np_cell2Node = numpy.array(
+                    fs_cell2Node.Buffer(),
+                    dtype=Internal.E_NpyInt,
+                    copy=False
+                )[:nownedCells]
+                self.connectivityDict[cellType] = {
+                    "nCells": nownedCells,
+                    "ElementConnectivity": np_cell2Node
+                }
+
+                if len(np_bMarkers) == 0:
+                    continue
+
+                # Fill indirection between cell types and boundary markers
                 fs_bMarkerCellType = self.fsmesh.GetCellAttribute(
                     "CADGroupID", cellType
                 )
-                np_bMarkerCellType = numpy.array(
+                cellType2BMarkersDict[cellType] = numpy.array(
                     fs_bMarkerCellType.Buffer(),
-                    copy=True,
                     dtype=Internal.E_NpyInt,
-                )
-                if not includeGhostCells:
-                    np_bMarkerCellType = np_bMarkerCellType[:nownedCells]
-                uniqueMarkers[cellType] = set(np_bMarkerCellType)
-            if uniqueMarkers:
-                sharedMarkers = set.intersection(*uniqueMarkers.values())
+                    copy=False
+                )[:nownedCells]  # no ghost cells
+            
+            # print("cellType2BMarkersDict", cellType2BMarkersDict)
 
-            bMarkerCellTypeDict = {}
-            if sharedMarkers:
-                if Cmpi.master and self.verbose:
-                    print(
-                        "Markers associated with different surface element "
-                        f"types: {sharedMarkers}."
-                    )
-                val = 0
-                for cellType in self.fsSurfaceCellTypes:
-                    nownedCells = self.fsmesh.GetNOwnedCells(cellType)
-                    fs_bMarkerCellType = self.fsmesh.GetCellAttribute(
-                        "CADGroupID", cellType
-                    )
-                    np_bMarkerCellType = numpy.array(
-                        fs_bMarkerCellType.Buffer(), copy=True
-                    )
-                    if not includeGhostCells:
-                        np_bMarkerCellType = np_bMarkerCellType[:nownedCells]
-                    for sharedMarker in sharedMarkers:
-                        np_bMarkerCellType = numpy.where(
-                            np_bMarkerCellType == sharedMarker,
-                            sharedMarker + val,
-                            np_bMarkerCellType,
-                        )
-                        if (sharedMarker + val) not in np_bMarkerList:
-                            np_bMarkerList = numpy.append(
-                                np_bMarkerList, sharedMarker + val
-                            )
-                        self.bcDict[sharedMarker + val] = self.bcDict[
-                            sharedMarker
-                        ]
-                    bMarkerCellTypeDict[cellType] = np_bMarkerCellType
-                    val += 0.1
-            else:
-                for cellType in self.fsSurfaceCellTypes:
-                    nownedCells = self.fsmesh.GetNOwnedCells(cellType)
-                    fs_bMarkerCellType = self.fsmesh.GetCellAttribute(
-                        "CADGroupID", cellType
-                    )
-                    bMarkerCellTypeDict[cellType] = numpy.array(
-                        fs_bMarkerCellType.Buffer(), copy=True
-                    )[
-                        :nownedCells
-                    ]  # no ghost cells
+            for marker in np_bMarkers:
+                # BC name truncation because of a limitation of the CGNS format
+                # (a 9-char suffix may be added)
+                fsbcname = self.bcDict[marker]["name"]
+                fsbcname = fsbcname[-23:]
+                self.bcDict[marker]["name"] = fsbcname
 
-            for marker in np_bMarkerList:
-                indices_vector = []
+                # Fill bcDict and connectivityDict for this marker
                 offset = 0
                 for cellType in self.fsSurfaceCellTypes:
                     nownedCells = self.fsmesh.GetNOwnedCells(cellType)
-                    fs_cell2Node = self.fsmesh.GetCell2Node(cellType)
-                    np_cell2Node = (
-                        1
-                        + numpy.array(
-                            fs_cell2Node.Buffer(),
-                            dtype=Internal.E_NpyInt,
-                            copy=True
-                        )
-                    )[:nownedCells,:]
-                    np_bMarkerCellType = bMarkerCellTypeDict[cellType]
-
-                    # FS bcname can be overriden by self.bcDict
-                    fsbcname = str(
-                        self.fsmesh.GetCellAttributeValueName(
-                            "CADGroupID", int(marker)
-                        )
-                    )
-                    bcname = self.bcDict[marker][0]
-                    if bcname is not None:
-                        fsbcname = bcname
-                    # limitation of the CGNS format (add 9-char suffix)
-                    fsbcname = fsbcname[-23:]
-                    # always set bcname in self.bcDict
-                    self.bcDict[marker][0] = fsbcname
-
-                    indicesVector = numpy.ravel(
-                        numpy.argwhere(np_bMarkerCellType == marker)
-                    )
-                    if len(indicesVector) > 0:
-                        self.bcsNames.append(fsbcname)
-                        self.indicesPerBdr.append(indicesVector + offset)
-                        self.connectivityDict[cellType] = np_cell2Node[indicesVector]
-                        self.fsBCCellTypes.append(cellType)
-                        self.fsMarkers.append(marker)
-                    offset = nownedCells
+                    np_bMarkerCellType = cellType2BMarkersDict[cellType]
+                    np_markerPositions = numpy.flatnonzero(np_bMarkerCellType == marker)
+                    if np_markerPositions.size:
+                        # print("marker", marker, "cellType", cellType, "fsbcname", fsbcname)
+                        self.bcDict[marker].setdefault("cellTypes", []).append(cellType)
+                        self.bcDict[marker].setdefault("facePLs", []).append(np_markerPositions + offset)
+                        if -marker not in self.connectivityDict:
+                            self.connectivityDict[-marker] = {}
+                        markerDict = self.connectivityDict[-marker]
+                        markerDict.setdefault("nCells", []).append(nownedCells)
+                        markerDict.setdefault("facePositions", []).append(np_markerPositions)
+                    offset += nownedCells
+        # for k, v in self.bcDict.items():
+        #     print(k, v, "\n\n")
 
     @ProfileTime
     def CreateCGNSConnectivity(self, includeSurfaceData=True):
@@ -2117,14 +2114,14 @@ class FSCGNSConverter:
         zone = Internal.getZones(self.pyTree)[0]
 
         for fsCellType in self.fsVolumeCellTypes:
-            np_cell2Node = self.connectivityDict[fsCellType]
+            np_cell2Node = self.connectivityDict[fsCellType]["ElementConnectivity"]
             nCellsOfType, nvpe = np_cell2Node.shape
             cgnsEltNo = FSCGNSConverter.FS2CGNS_CT[fsCellType]
             cgnsEltName = Internal.eltNo2EltName(cgnsEltNo)[0]
             Internal.newElements(
                 name="GridElements_" + cgnsEltName,
                 etype=cgnsEltName,
-                econnectivity=np_cell2Node.ravel(),
+                econnectivity=1 + np_cell2Node.ravel(),
                 erange=[ntotElts + 1, ntotElts + nCellsOfType],
                 eboundary=0,
                 parent=zone
@@ -2134,51 +2131,52 @@ class FSCGNSConverter:
         if not includeSurfaceData:
             return
 
-        for i, fsCellType in enumerate(self.fsBCCellTypes):
-            np_cell2Node = self.connectivityDict[fsCellType]
-            nCellsOfType, nvpe = np_cell2Node.shape
-            cgnsEltNo = FSCGNSConverter.FS2CGNS_CT[fsCellType]
-            cgnsEltName = Internal.eltNo2EltName(cgnsEltNo)[0]
-            bcName, bcType = self.bcDict[self.fsMarkers[i]]
-            if bcName is None:
-                bcName = self.bcsNames[i].split(".")[0]
-            else:
-                bcName = bcName.split(".")[0]
-            bcName = f"{bcName}.{cgnsEltName}_{int(self.fsMarkers[i])}"
-            Internal.newElements(
-                name=bcName,
-                etype=cgnsEltName,
-                erange=[ntotElts + 1, ntotElts + nCellsOfType],
-                econnectivity=np_cell2Node.ravel(),
-                eboundary=nCellsOfType,
-                parent=zone
-            )
+        for marker in self.bcDict:
+            bcType = self.bcDict[marker]["type"]
+            fsCellTypes = self.bcDict[marker].get("cellTypes", [])
+            if not fsCellTypes:
+                continue
 
-            C._addBC2Zone(
-                zone,
-                bcName,
-                bcType,
-                elementRange=[ntotElts + 1, ntotElts + nCellsOfType],
-            )
-            zoneBC = Internal.getNodeFromType(zone, "ZoneBC_t")
-            lastBCName = C.getLastBCName(bcName)
-            n_bc = Internal.getNodeFromName(zoneBC, lastBCName)
-            n_bc[0] = bcName
-            boundaryStateDataset = Internal.createNode(
-                "BCDataSet", "BCDataSet_t", parent=n_bc, value="Null"
-            )
-            boundaryState = Internal.createNode(
-                "Boundary", "BCData_t", parent=boundaryStateDataset
-            )
-            boundaryState[2].append(
-                [
-                    "BoundaryMarker",
-                    int(self.fsMarkers[i]),
-                    [],
-                    "UserDefinedData_t",
-                ]
-            )
-            ntotElts += nCellsOfType
+            markerPosList = self.connectivityDict[-marker]["facePositions"]
+            for fsCellType, np_markerPos in zip(fsCellTypes, markerPosList):
+                np_cell2Node = (
+                    self.connectivityDict[fsCellType]["ElementConnectivity"][
+                        np_markerPos
+                    ]
+                )
+                nCellsOfType, nvpe = np_cell2Node.shape
+                cgnsEltNo = FSCGNSConverter.FS2CGNS_CT[fsCellType]
+                cgnsEltName = Internal.eltNo2EltName(cgnsEltNo)[0]
+                eltRange = [ntotElts + 1, ntotElts + nCellsOfType]
+
+                # If cgnsEltName is already in bcName, remove it
+                bcName = self.bcDict[marker]["name"].split(".")[0]
+                # print("bcName", self.bcDict[marker]["name"], bcName, f"{bcName}.{cgnsEltName}_{marker}")
+                bcName = f"{bcName}.{cgnsEltName}_{marker}"
+                Internal.newElements(
+                    name=bcName,
+                    etype=cgnsEltName,
+                    erange=eltRange,
+                    econnectivity=1 + np_cell2Node.ravel(),
+                    eboundary=nCellsOfType,
+                    parent=zone
+                )
+
+                C._addBC2Zone(zone, bcName, bcType, elementRange=eltRange)
+                zoneBC = Internal.getNodeFromType(zone, "ZoneBC_t")
+                lastBCName = C.getLastBCName(bcName)
+                n_bc = Internal.getNodeFromName(zoneBC, lastBCName)
+                n_bc[0] = bcName
+                boundaryStateDataset = Internal.createNode(
+                    "BCDataSet", "BCDataSet_t", parent=n_bc, value="Null"
+                )
+                boundaryState = Internal.createNode(
+                    "Boundary", "BCData_t", parent=boundaryStateDataset
+                )
+                boundaryState[2].append(
+                    ["BoundaryMarker", marker, [], "UserDefinedData_t"]
+                )
+                ntotElts += nCellsOfType
 
     @ProfileTime
     def RecoverFSFlowSolution(self):
@@ -2248,6 +2246,18 @@ class FSCGNSConverter:
                 if zoneBC is not None:
                     n_bcs = Internal.getNodesFromType(zoneBC, "BC_t")
                     for i, n_bc in enumerate(n_bcs):
+                        suffix = n_bc[0].split(".")[1]
+                        cgnsCellName, marker = suffix.split("_")
+                        cgnsCellType = Internal.eltName2EltNo(cgnsCellName)[0]
+                        cellType = FSCGNSConverter.CGNS2FS_CT.get(cgnsCellType)
+                        marker = int(marker)
+                        # print("marker", cellType, marker, self.bcDict[marker])
+
+                        cellTypes = self.bcDict[marker]["cellTypes"]
+                        ct = cellTypes.index(cellType)
+                        # print("cellTypes", cellTypes, "cellType", cellType, ct)
+                        np_facePL = self.bcDict[marker]["facePLs"][ct]
+
                         bdrStateDataset = Internal.getNodeFromType(
                             n_bc, "BCDataSet_t"
                         )
@@ -2257,10 +2267,8 @@ class FSCGNSConverter:
                         for j, flowSolutionName in enumerate(flowSolutionNames):
                             Internal.newDataArray(
                                 flowSolutionName[:32],
-                                value=np_flowSolutionValues[:, j][
-                                    self.indicesPerBdr[i]
-                                ],
-                                parent=bdrState,
+                                value=np_flowSolutionValues[:, j][np_facePL],
+                                parent=bdrState
                             )
 
     @ProfileTime
@@ -2616,7 +2624,7 @@ class FSCGNSConverter:
             self.clac, len(uniqueCoords)
         )
         dedupMap = ArrayOps.Broadcast(dedupMap, self.clac)
-        fsCellTypesNC = self.fsCellTypes
+        fsCellTypesNC = self.fsVolumeCellTypes + self.fsSurfaceCellTypes
         if not self.conformal:
             fsCellTypesNC.append(quadNQuad)
         cell2NodeDict = {}
@@ -2636,7 +2644,7 @@ class FSCGNSConverter:
         fsCellTypeMarkersDict = {}
         npCellTypeMarkersDict = {}
         try:
-            np_bMarkerList = numpy.array(fs_bMarkerList.Buffer(), copy=True)
+            np_bMarkers = numpy.array(fs_bMarkerList.Buffer(), copy=True)
             for cellType in self.fsSurfaceCellTypes:
                 fs_markers_array_cell_type = self.fsmesh.GetCellAttribute(
                     "CADGroupID", cellType
@@ -2655,9 +2663,9 @@ class FSCGNSConverter:
                 fsCellTypeMarkersDict[cellType] = fs_markers_array_cell_type
                 # np_markers_celltype_dict_gath = Cmpi.gather(npCellTypeMarkersDict)
 
-            fs_bMarkerList = FSIntArray(len(np_bMarkerList))
-            for i in range(len(np_bMarkerList)):
-                fs_bMarkerList[i] = int(np_bMarkerList[i])
+            fs_bMarkerList = FSIntArray(len(np_bMarkers))
+            for i in range(len(np_bMarkers)):
+                fs_bMarkerList[i] = int(np_bMarkers[i])
 
             for marker in fs_bMarkerList:
                 names.append(
@@ -2666,7 +2674,7 @@ class FSCGNSConverter:
         except BufferError:
             pass
 
-        if self.IBM:
+        if self.ibm:
             if self.fsVolumeCellTypes:
                 flis_distance = self.fsmesh.GetUnstructDataset(
                     "FlisWallDistance"
@@ -2738,7 +2746,7 @@ class FSCGNSConverter:
                 FS_AT_CADGroupID, cellType, fsCellTypeMarkersDict[cellType]
             )
 
-        if self.IBM:
+        if self.ibm:
             quantityName = "FlisWallDistance"
             quantityNames = FSStringArray(1)
             quantityNames[0] = quantityName
@@ -2789,9 +2797,7 @@ class FSCGNSConverter:
         del (
             self.fsmesh,
             self.np_coordinates,
-            self.connectivityDict,
-            #self.indicesPerBdr,
-            #self.bMarker2FacePLDict,
+            self.connectivityDict
         )
 
     @ProfileTime
@@ -2825,8 +2831,8 @@ class FSCGNSConverter:
             else:
                 if Cmpi.master:
                     raise ValueError(
-                        "Convert2NGon4FFD: FSCGNSConverter.convert(forFFDX=True, "
-                        "**kwargs) must be called instead of "
+                        "Convert2NGon4FFD: FSCGNSConverter.Convert("
+                        "forFFDX=True, **kwargs) must be called instead of "
                         "FSCGNSConverter.Convert2NGon4FFD"
                     )
         else:
