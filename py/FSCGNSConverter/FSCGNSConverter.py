@@ -681,10 +681,6 @@ class FSCGNSConverter:
 
         if Cmpi.size > 1:
             Cmpi._setProc(self.pyTree, Cmpi.rank)
-        # Rename zones
-        zones = Internal.getZones(self.pyTree)
-        for z in zones:
-            z[0] = f"zone.{Cmpi.rank:d}"
 
         self.RecoverFSFlowSolution()
 
@@ -734,12 +730,11 @@ class FSCGNSConverter:
             self.InitIBMDatasets()
             ibmDatasets = self.RecoverPointList2BoundaryMarkers()
         if Cmpi.size > 1:
-            self.InitFSBCs_MPI(ibmDatasets)
+            self.InitFSBCsMPI(ibmDatasets)
             self.ParallelDeduplicateNodesFSMesh()
         else:
             self.InitFSBCs(ibmDatasets)
-        if Cmpi.size == 1:
-            self.InitFSFlowSolution()
+        self.InitFSFlowSolution()
         self.CheckFSMesh()
 
     @ProfileTime
@@ -801,7 +796,7 @@ class FSCGNSConverter:
         fs_coordinates = self.fsmesh.GetUnstructDataset(
             self.coordsName
         ).GetValues()
-        np_coordinates = numpy.array(fs_coordinates.Buffer(), copy=True)
+        np_coordinates = numpy.array(fs_coordinates.Buffer(), copy=False)
         self.SetNumpyCoordinates(np_coordinates)
 
     @ProfileTime
@@ -1444,7 +1439,7 @@ class FSCGNSConverter:
 
         if not self.conformal:
             if Cmpi.size > 1:
-                self.InitPseudoCell_QuadNQuad_MPI(z_ncFaces)
+                self.InitPseudoCell_QuadNQuadMPI(z_ncFaces)
             else:
                 self.InitPseudoCell_QuadNQuad(z_ncFaces)
 
@@ -1761,7 +1756,7 @@ class FSCGNSConverter:
                 )
 
     @ProfileTime
-    def InitFSBCs_MPI(self, ibmDatasets=None):
+    def InitFSBCsMPI(self, ibmDatasets=None):
         np_markerArray = numpy.zeros(
             self.nsurfaceCells, dtype=Internal.E_NpyInt
         )
@@ -1967,7 +1962,7 @@ class FSCGNSConverter:
         base = Internal.newCGNSBase("Base", 3, 3, parent=self.pyTree)
         self.nvertices = self.np_coordinates.shape[0]
         pyTree_zone = Internal.newZone(
-            name="Zone1",  # name=f"zone.{Cmpi.rank:d}", TODO
+            name=f"zone.{Cmpi.rank:d}",
             zsize=[[self.nvertices, self.nvolumeCells, 0]],
             ztype=self.meshType,
             family=None,
@@ -2306,6 +2301,9 @@ class FSCGNSConverter:
             except BufferError:
                 pass
 
+        if Cmpi.size > 1: # TODO
+            return
+
         if not self.datasets:
             return
         elif self.datasets == "all":
@@ -2423,7 +2421,7 @@ class FSCGNSConverter:
                 FSMeshEnums.PCT_Quad4Quad, fs_cell2Node, False
             )
 
-    def InitPseudoCell_QuadNQuad_MPI(self, z_ncFaces):
+    def InitPseudoCell_QuadNQuadMPI(self, z_ncFaces):
         if Cmpi.master and self.verbose:
             print("Creating QuadNQuad pseudo connectivity.")
         rank = self.clac.ProcID()
