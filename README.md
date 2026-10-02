@@ -1,8 +1,8 @@
 # FSCGNSConverter
 
-FSCGNSConverter is a mesh conversion FS module that
+FSCGNSConverter is a mesh conversion Flow-Simulator/Cassiopee module that
 facilitates data exchange between the CODA ecosystem and ONERA's CGNS pre- and
-post-processing tools Cassiopee and maia.
+post-processing tools [Cassiopee](https://onera.github.io/Cassiopee/) and [maia](https://github.com/onera/Maia).
 It is a newer iteration of FSMeshPyTreeConversion offering an improved API and
 increased performance.
 
