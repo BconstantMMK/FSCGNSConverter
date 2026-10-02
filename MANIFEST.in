@@ -1,4 +1,0 @@
-# setuptools_scm includes all Git-tracked files to the source
-# distribution. The only thing left to to is to exclude the CI pipeline
-# definition from the source tarball.
-prune .gitlab-ci.yml
